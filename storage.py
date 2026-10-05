@@ -317,6 +317,6 @@ class Store:
             return dict(
                 c.execute(
                     "SELECT m.sender,COUNT(*) FROM moves m JOIN operations o ON m.operation=o.id WHERE m.account=? AND m.state='moved' AND o.stamp>? GROUP BY m.sender",
-                    (self.account, time.time() - 30 * 86400),
+                    (self.account, time.time() - 3 * 86400),
                 ).fetchall()
             )
