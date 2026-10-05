@@ -82,7 +82,7 @@ class FakeIMAP:
                 (
                     (
                         f'1 (UID {m["uid"]} FLAGS '
-                        + ('()' if m.get("unread", True) else r'(\\Seen)')
+                        + ('()' if m.get("unread", True) else r'(\Seen)')
                         + ' INTERNALDATE "05-Oct-2026 10:20:30 +0000"'
                     ).encode(),
                     f'From: {m["name"]} <{m["sender"]}>\r\nSubject: {m["subject"]}\r\nMessage-ID: {m["message_id"]}\r\nList-Unsubscribe: <https://example.com/unsub>\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n\r\n'.encode(),
