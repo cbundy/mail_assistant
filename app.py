@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.1.3-test"
+VERSION = "3.1.4-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -178,8 +178,98 @@ def authenticate(account, password, progress):
     return account
 
 
+def execute_pending_request(store):
+    """Run a queued destructive action independently of the preview UI.
+
+    Streamlit callbacks run before the next full app render.  The request must
+    therefore be consumed near the top level, not inside the preview block that
+    created the button.
+    """
+    if not ss.get("execute_request"):
+        return
+
+    request = ss.pop("execute_request")
+    st.info(
+        T(
+            "Команда принята. Выполняю действие…",
+            "Command received. Running action…",
+        )
+    )
+    status = st.status(
+        T("Подключение к iCloud…", "Connecting to iCloud…"),
+        state="running",
+        expanded=True,
+    )
+    bar = st.progress(0, text=T("Начинаю…", "Starting…"))
+
+    def execute_progress(stage, current, total):
+        labels = {
+            "connect": T("Подключение к iCloud", "Connecting to iCloud"),
+            "unsubscribe": T(
+                "Отправка запросов на отписку",
+                "Sending unsubscribe requests",
+            ),
+            "delete": T("Перемещение в Корзину", "Moving to Trash"),
+        }
+        label_text = labels.get(stage, labels["connect"])
+        status.update(label=label_text, state="running")
+        if total:
+            bar.progress(
+                min(current / total, 1.0),
+                text=f"{label_text} · {current}/{total}",
+            )
+        else:
+            bar.progress(0, text=label_text)
+
+    try:
+        result = service.execute(
+            store,
+            ss.password,
+            request["preview"],
+            request["selected_uids"],
+            execute_progress,
+        )
+    except Exception as exc:
+        result = {
+            "error": service.error_code(exc),
+            "error_detail": service.error_details(exc),
+            "moved": 0,
+            "requested": 0,
+            "manual": 0,
+            "failed": 0,
+            "skipped": 0,
+        }
+
+    ss.result = result
+    ss.result_kind = "execute"
+    ss.preview = None
+    ss.selection_version = ss.get("selection_version", 0) + 1
+    ss.chosen_companies = []
+    ss.pop("view_company", None)
+
+    if result.get("error"):
+        status.update(
+            label=T(
+                "Действие завершилось с ошибкой",
+                "Action finished with an error",
+            ),
+            state="error",
+            expanded=True,
+        )
+        show_error(result["error"], result.get("error_detail"))
+    else:
+        bar.progress(1.0, text=T("Готово", "Done"))
+        status.update(
+            label=T("Готово", "Done"),
+            state="complete",
+            expanded=False,
+        )
+
+    st.rerun()
+
+
 st.title("📬 iCloud Mail Assistant")
-st.warning("TEST BUILD 3.1.3 · fix/icloud-delete")
+st.warning("TEST BUILD 3.1.4 · fix/icloud-delete")
 pages = {
     "mail": ("Почта", "Mail"),
     "white": ("Белый список", "Whitelist"),
@@ -363,6 +453,11 @@ recovery_key = "_recovered_operations_" + ss.account
 if not ss.get(recovery_key):
     ss.recovered_operations = store.recover_running()
     ss[recovery_key] = True
+
+# A queued confirmation must run before page-specific UI.  Otherwise navigating
+# away or losing the preview can strand the request until some later rerun.
+execute_pending_request(store)
+
 page = ss.get("page", "mail")
 
 history = store.history()
@@ -949,92 +1044,6 @@ else:
                     disabled=not selected_uids and not preview["unsubs"],
                     on_click=queue_execute,
                 )
-
-                if ss.get("execute_request"):
-                    request = ss.pop("execute_request")
-                    st.info(
-                        T(
-                            "Команда принята. Выполняю действие…",
-                            "Command received. Running action…",
-                        )
-                    )
-                    status = st.status(
-                        T("Подключение к iCloud…", "Connecting to iCloud…"),
-                        state="running",
-                        expanded=True,
-                    )
-                    bar = st.progress(0, text=T("Начинаю…", "Starting…"))
-
-                    def execute_progress(stage, current, total):
-                        labels = {
-                            "connect": T(
-                                "Подключение к iCloud",
-                                "Connecting to iCloud",
-                            ),
-                            "unsubscribe": T(
-                                "Отправка запросов на отписку",
-                                "Sending unsubscribe requests",
-                            ),
-                            "delete": T(
-                                "Перемещение в Корзину",
-                                "Moving to Trash",
-                            ),
-                        }
-                        label_text = labels.get(stage, labels["connect"])
-                        status.update(label=label_text, state="running")
-                        if total:
-                            value = min(current / total, 1.0)
-                            bar.progress(
-                                value,
-                                text=f"{label_text} · {current}/{total}",
-                            )
-                        else:
-                            bar.progress(0, text=label_text)
-
-                    try:
-                        result = service.execute(
-                            store,
-                            ss.password,
-                            request["preview"],
-                            request["selected_uids"],
-                            execute_progress,
-                        )
-                    except Exception as exc:
-                        result = {
-                            "error": service.error_code(exc),
-                            "error_detail": service.error_details(exc),
-                            "moved": 0,
-                            "requested": 0,
-                            "manual": 0,
-                            "failed": 0,
-                            "skipped": 0,
-                        }
-
-                    ss.result = result
-                    ss.result_kind = "execute"
-                    ss.preview = None
-                    ss.selection_version = ss.get("selection_version", 0) + 1
-                    ss.chosen_companies = []
-                    ss.pop("view_company", None)
-
-                    if result.get("error"):
-                        status.update(
-                            label=T(
-                                "Действие завершилось с ошибкой",
-                                "Action finished with an error",
-                            ),
-                            state="error",
-                            expanded=True,
-                        )
-                        show_error(result["error"], result.get("error_detail"))
-                    else:
-                        bar.progress(1.0, text=T("Готово", "Done"))
-                        status.update(
-                            label=T("Готово", "Done"),
-                            state="complete",
-                            expanded=False,
-                        )
-                    st.rerun()
 
 
 def close_messages():
