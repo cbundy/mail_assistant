@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.1.2-test"
+VERSION = "3.1.3-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -179,7 +179,7 @@ def authenticate(account, password, progress):
 
 
 st.title("📬 iCloud Mail Assistant")
-st.warning("TEST BUILD 3.1.2 · fix/icloud-delete")
+st.warning("TEST BUILD 3.1.3 · fix/icloud-delete")
 pages = {
     "mail": ("Почта", "Mail"),
     "white": ("Белый список", "Whitelist"),
@@ -359,6 +359,10 @@ if not ss.get("account"):
     st.stop()
 
 store = Store(ss.account)
+recovery_key = "_recovered_operations_" + ss.account
+if not ss.get(recovery_key):
+    ss.recovered_operations = store.recover_running()
+    ss[recovery_key] = True
 page = ss.get("page", "mail")
 
 history = store.history()
@@ -472,6 +476,15 @@ elif page == "groups":
 
 elif page == "history":
     st.subheader(T("История действий", "Action history"))
+    if ss.get("recovered_operations"):
+        st.info(
+            T(
+                f"После перезапуска помечено прерванными операций: {ss.recovered_operations}.",
+                f"Operations marked interrupted after restart: {ss.recovered_operations}.",
+            )
+        )
+        ss.recovered_operations = 0
+
     rows = []
     for h in history:
         d = json.loads(h["detail"])
@@ -480,6 +493,7 @@ elif page == "history":
                 T("Дата", "Date"): date(h["stamp"]),
                 T("Действие", "Action"): h["kind"],
                 T("Статус", "Status"): h["status"],
+                T("Последний этап", "Last step"): d.get("last_step", "—"),
                 T("Компании", "Companies"): ", ".join(d.get("companies", [])),
                 T("Удалено", "Deleted"): d.get("moved", 0),
                 T("Запросов принято", "Requests accepted"): d.get("requested", 0),
@@ -489,13 +503,38 @@ elif page == "history":
     st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
     st.caption(
         T(
-            "running после перезапуска означает прерванную операцию: проверь почту перед повтором. partial означает частичное выполнение.",
-            "A running entry after restart means an interrupted operation: check your mail before retrying. partial means partial completion.",
+            "interrupted означает, что предыдущий процесс завершился до финального статуса. partial — действие дошло до ошибки, но часть шагов могла успеть выполниться.",
+            "interrupted means the previous app process ended before a final status. partial means the action reached an error after some steps may have completed.",
         )
     )
-    with st.expander(T("Подробности последнего действия", "Last action details")):
+    with st.expander(T("Диагностика последнего действия", "Last action diagnostics")):
         if history:
-            st.json(json.loads(history[0]["detail"]))
+            detail = json.loads(history[0]["detail"])
+            trace = detail.get("trace", [])
+            if trace:
+                trace_rows = []
+                for event in trace:
+                    row = {
+                        T("Время", "Time"): date(event.get("stamp")),
+                        T("Этап", "Step"): event.get("step", "—"),
+                    }
+                    for key in ("index", "total", "uid", "move", "uidplus", "mapped", "found", "status", "error", "detail"):
+                        if key in event:
+                            row[key] = event[key]
+                    trace_rows.append(row)
+                st.dataframe(
+                    pd.DataFrame(trace_rows),
+                    hide_index=True,
+                    width="stretch",
+                )
+            else:
+                st.info(
+                    T(
+                        "Для этой старой операции подробная диагностика ещё не записывалась.",
+                        "Detailed diagnostics were not recorded for this older operation.",
+                    )
+                )
+            st.json({k: v for k, v in detail.items() if k != "trace"})
 
 elif page == "settings":
     st.subheader(T("Настройки", "Settings"))
