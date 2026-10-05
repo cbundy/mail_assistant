@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.3.10-test"
+VERSION = "3.3.11-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -328,53 +328,60 @@ textarea::placeholder {{
 [data-testid="stSidebar"] [data-testid="stButton"] button {{
   justify-content: flex-start;
 }}
-.st-key-company_table [data-testid="stVerticalBlockBorderWrapper"] > div {{
-  border-color: var(--border) !important;
+/* Keyed containers are the bordered element in current Streamlit. */
+.st-key-company_table {{
+  border: 1px solid var(--border) !important;
+  border-radius: 12px !important;
+  padding: .65rem !important;
+  gap: .45rem !important;
 }}
-.st-key-company_table .st-key-company_search {{
-  margin-bottom: .1rem !important;
+.st-key-company_list {{
+  gap: .3rem !important;
+  scrollbar-gutter: stable;
 }}
-.st-key-company_list [data-testid="stButton"] button {{
-  min-height: 28px;
+.st-key-company_header,
+[class*="st-key-company_row_"] {{
+  box-sizing: border-box;
+  padding: .2rem .5rem !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  gap: 0 !important;
+}}
+.st-key-company_header {{
+  border-color: transparent !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}}
+[class*="st-key-company_row_"] {{
+  background: var(--surface-2) !important;
 }}
 .st-key-company_list [data-testid="stHorizontalBlock"] {{
-  align-items: center;
+  align-items: center !important;
 }}
-.st-key-company_list p {{ margin-bottom: 0; }}
+.st-key-company_list [data-testid="stMarkdownContainer"] p {{
+  margin: 0 !important;
+}}
 .company-col-head {{
   color: var(--muted);
-  line-height: 1.15;
-  padding: 0 .05rem .15rem;
+  line-height: 1.2;
 }}
-.company-col-head.center,
-.company-cell.center {{
-  text-align: center;
-}}
+.company-col-head.center {{ text-align: center; }}
 .company-cell {{
   display: flex;
   align-items: center;
-  min-height: 28px;
-  line-height: 1.15;
+  min-height: 32px;
+  line-height: 1.2;
 }}
-.company-cell.center {{
-  justify-content: center;
-}}
-[class*="st-key-company_row_"] [data-testid="stVerticalBlockBorderWrapper"] > div {{
-  background: var(--surface-2) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 10px !important;
-  padding: .18rem .5rem !important;
-  margin-bottom: .24rem !important;
-}}
-[class*="st-key-company_row_"] [data-testid="stCheckbox"] {{
-  min-height: 28px !important;
-}}
+.company-cell.center {{ justify-content: center; }}
+[class*="st-key-company_row_"] [data-testid="stCheckbox"],
 [class*="st-key-company_row_"] [data-testid="stCheckbox"] label {{
-  font-weight: 600 !important;
-  min-height: 28px !important;
+  min-height: 32px !important;
+  margin: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
 }}
 [class*="st-key-company_row_"] [data-testid="stButton"] button {{
-  min-height: 30px !important;
+  min-height: 32px !important;
   padding-top: .15rem !important;
   padding-bottom: .15rem !important;
 }}
@@ -1254,31 +1261,31 @@ else:
                     ss[select_key(g)] = g["black"] and not g["protected"]
 
             chosen = set(ss.get("chosen_companies", []))
-            heads = st.columns([4, 1, 1, 2, 1.35], vertical_alignment="center")
-            for index, (col, label) in enumerate(
-                zip(
-                    heads,
-                    [
-                        T("Компания", "Company"),
-                        T("Писем", "Emails"),
-                        T("Непроч.", "Unread"),
-                        T("Последнее", "Latest"),
-                        T("Просмотр", "Preview"),
-                    ],
-                )
-            ):
-                align_class = "" if index == 0 else " center"
-                col.markdown(
-                    f'<div class="company-col-head{align_class}">{label}</div>',
-                    unsafe_allow_html=True,
-                )
-
             with st.container(height=430, key="company_list", border=False):
+                with st.container(border=False, key="company_header"):
+                    heads = st.columns([4, 1, 1, 2, 1.35], vertical_alignment="center")
+                    for index, (col, label) in enumerate(
+                        zip(
+                            heads,
+                            [
+                                T("Компания", "Company"),
+                                T("Писем", "Emails"),
+                                T("Непроч.", "Unread"),
+                                T("Последнее", "Latest"),
+                                T("Просмотр", "Preview"),
+                            ],
+                        )
+                    ):
+                        align_class = "" if index == 0 else " center"
+                        col.markdown(
+                            f'<div class="company-col-head{align_class}">{label}</div>',
+                            unsafe_allow_html=True,
+                        )
                 for row_index, g in enumerate(visible):
                     if select_key(g) not in ss:
                         ss[select_key(g)] = g["key"] in chosen
                     with st.container(
-                        border=True,
+                        border=False,
                         key=f"company_row_{row_index}_{g['key']}",
                     ):
                         cols = st.columns(
@@ -1767,3 +1774,4 @@ if history and page == "mail":
         + T("запросов отписки принято", "unsubscribe requests accepted")
         + f" {detail.get('requested', 0)}"
     )
+
