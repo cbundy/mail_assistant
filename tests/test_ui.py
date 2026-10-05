@@ -101,6 +101,40 @@ class UITests(unittest.TestCase):
             self.assertIsNone(at.session_state["preview"])
             self.assertTrue(any("удалено 2" in x.value for x in at.info))
 
+    def test_unchecking_one_message_keeps_preview_and_other_selection(self):
+        fake = FakeIMAP([msg(), msg("11", "news@auchan.pl", "Auchan")])
+
+        @contextlib.contextmanager
+        def conn(*args):
+            yield fake
+
+        with patch.object(svc, "connection", conn):
+            at = self.app()
+            next(c for c in at.checkbox if c.label == "Auchan").check().run()
+            next(r for r in at.radio if r.label == "Какие письма удалить").set_value(
+                "all"
+            ).run()
+            at.button(key="prepare_action").click().run()
+            job = at.session_state["job"]
+            if job:
+                job.thread.join(5)
+            at.run()
+
+            preview_id = at.session_state["preview_id"]
+            first_key = f"message_{preview_id}_uid_10"
+            second_key = f"message_{preview_id}_uid_11"
+            self.assertTrue(at.checkbox(key=first_key).value)
+            self.assertTrue(at.checkbox(key=second_key).value)
+
+            at.checkbox(key=first_key).uncheck().run()
+
+            self.assertFalse(at.exception)
+            self.assertIsNotNone(at.session_state["preview"])
+            self.assertFalse(at.checkbox(key=first_key).value)
+            self.assertTrue(at.checkbox(key=second_key).value)
+            self.assertFalse(at.button(key="execute_action").disabled)
+            self.assertIn("1 писем", at.button(key="execute_action").label)
+
     def test_queued_execute_runs_even_after_preview_context_is_gone(self):
         fake = FakeIMAP()
 
