@@ -46,6 +46,14 @@ class UITests(unittest.TestCase):
         self.assertTrue(self.button(at, "Connect to iCloud").disabled)
         self.assertEqual(storage.Store().get("language"), "English")
 
+    def test_theme_toggle_persists(self):
+        at = self.app()
+        self.assertFalse(at.toggle(key="dark_theme").value)
+        at.toggle(key="dark_theme").set_value(True).run()
+        self.assertFalse(at.exception)
+        self.assertTrue(at.toggle(key="dark_theme").value)
+        self.assertEqual(storage.Store().get("theme_mode"), "dark")
+
     def test_all_pages_ru_en(self):
         at = self.app()
         for lang in ["Русский", "English"]:
