@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.3.4-test"
+VERSION = "3.3.5-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -354,24 +354,27 @@ textarea::placeholder {{
   max-width: 1180px;
 }}
 .st-key-theme_toggle_area {{
-  padding-top: .9rem;
-  padding-right: .25rem;
+  padding-top: 2.2rem;
+  padding-right: .2rem;
 }}
 .st-key-theme_toggle_area [data-testid="stHorizontalBlock"] {{
   align-items: center !important;
   justify-content: flex-end !important;
-  gap: .55rem !important;
+  gap: .18rem !important;
 }}
 .st-key-theme_toggle_area [data-testid="stToggle"] {{
   margin: 0 !important;
   padding: 0 !important;
+  transform: scale(1.35);
+  transform-origin: left center;
 }}
 .st-key-theme_toggle_area .theme-label {{
   color: var(--text);
   font-size: {ss.font_size}px;
-  font-weight: 500;
+  font-weight: 550;
   white-space: nowrap;
   line-height: 1;
+  text-align: right;
 }}
 .st-key-login_screen {{
   padding-top: 1.2rem;
@@ -562,7 +565,8 @@ with header_left:
 with header_right:
     with st.container(key="theme_toggle_area"):
         theme_text, theme_switch = st.columns(
-            [1.45, 0.55],
+            [1.0, 0.34],
+            gap="small",
             vertical_alignment="center",
         )
         with theme_text:
