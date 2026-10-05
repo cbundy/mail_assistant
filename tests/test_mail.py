@@ -250,6 +250,28 @@ class MailTests(unittest.TestCase):
             {"Auchan", "MyHeritage", "Apple"},
         )
 
+    def test_recent_deleted_uses_three_day_window(self):
+        now = 10 * 86400
+
+        with patch("storage.time.time", return_value=now - 2 * 86400):
+            recent_op = self.store.operation("delete_only", {"companies": ["Auchan"]})
+        recent_id = self.store.prepare_move(
+            recent_op, "INBOX", "123", msg("20"), "Deleted Messages"
+        )
+        self.store.move_state(recent_id, "moved", "456", "120")
+
+        with patch("storage.time.time", return_value=now - 4 * 86400):
+            old_op = self.store.operation("delete_only", {"companies": ["Auchan"]})
+        old_id = self.store.prepare_move(
+            old_op, "INBOX", "123", msg("21"), "Deleted Messages"
+        )
+        self.store.move_state(old_id, "moved", "456", "121")
+
+        with patch("storage.time.time", return_value=now):
+            counts = self.store.recent_deleted()
+
+        self.assertEqual(counts["news@auchan.pl"], 1)
+
     def test_seen_counter_deduplicates_and_survives_deletion(self):
         with patch("storage.time.time", return_value=50):
             self.store.unsubscribe("news@auchan.pl", "requested")
