@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.3.0-test"
+VERSION = "3.3.1-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -196,7 +196,7 @@ a {{ color: var(--primary) !important; }}
 [data-testid="stButton"] button,
 [data-testid="stLinkButton"] a {{
   min-height: 40px;
-  border-radius: 4px !important;
+  border-radius: 12px !important;
   border: 1px solid var(--border) !important;
   background: var(--surface) !important;
   color: var(--text) !important;
@@ -226,15 +226,36 @@ a {{ color: var(--primary) !important; }}
 
 [data-baseweb="input"] > div,
 [data-baseweb="select"] > div,
-[data-baseweb="textarea"] > div {{
+[data-baseweb="textarea"] > div,
+[data-testid="stTextInput"] > div > div,
+[data-testid="stSelectbox"] > div > div,
+[data-testid="stNumberInput"] > div > div {{
   background: var(--input) !important;
   border-color: var(--border) !important;
-  border-radius: 4px !important;
+  border-radius: 12px !important;
   box-shadow: none !important;
 }}
 [data-baseweb="input"] input,
-[data-baseweb="textarea"] textarea {{
+[data-baseweb="textarea"] textarea,
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input {{
+  background: var(--input) !important;
   color: var(--text) !important;
+  -webkit-text-fill-color: var(--text) !important;
+  border-radius: 12px !important;
+}}
+[data-baseweb="select"] * {{
+  color: var(--text) !important;
+}}
+[data-baseweb="select"] svg,
+[data-testid="stTextInput"] svg {{
+  fill: var(--text) !important;
+  color: var(--text) !important;
+}}
+input::placeholder,
+textarea::placeholder {{
+  color: var(--muted) !important;
+  opacity: .9 !important;
 }}
 [data-baseweb="popover"] > div,
 [role="listbox"] {{
@@ -244,17 +265,30 @@ a {{ color: var(--primary) !important; }}
 [data-testid="stVerticalBlockBorderWrapper"] > div {{
   background: var(--surface) !important;
   border: 1px solid var(--border) !important;
-  border-radius: 4px !important;
+  border-radius: 12px !important;
   box-shadow: none !important;
 }}
 [data-testid="stProgress"] > div > div {{ background: var(--primary) !important; }}
 [data-testid="stDataFrame"] {{ border-color: var(--border) !important; }}
 [data-testid="stAlert"] {{
-  border-radius: 4px !important;
+  border-radius: 12px !important;
   box-shadow: none !important;
 }}
 [data-testid="stRadio"] [role="radiogroup"] {{
   gap: .9rem;
+}}
+[data-testid="stRadio"] label,
+[data-testid="stCheckbox"] label,
+[data-testid="stToggle"] label {{
+  border-radius: 10px !important;
+}}
+[data-testid="stVerticalBlockBorderWrapper"] > div,
+[data-testid="stDialog"] > div {{
+  border-radius: 14px !important;
+}}
+[data-testid="stDataFrame"] {{
+  border-radius: 12px !important;
+  overflow: hidden;
 }}
 [data-testid="stSidebar"] [data-testid="stButton"] button {{
   justify-content: flex-start;
