@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.1.0"
+VERSION = "3.1.1-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -179,6 +179,7 @@ def authenticate(account, password, progress):
 
 
 st.title("📬 iCloud Mail Assistant")
+st.warning("TEST BUILD 3.1.1 · fix/icloud-delete")
 pages = {
     "mail": ("Почта", "Mail"),
     "white": ("Белый список", "Whitelist"),
