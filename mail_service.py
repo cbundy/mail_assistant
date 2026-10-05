@@ -378,30 +378,40 @@ def copy_mapping(m, uid):
 
 
 def move_one(m, uid, destination, record=lambda *a: None):
-    """Never issue broad EXPUNGE. Persist COPYUID before removing the source."""
+    """Move one message safely.
+
+    Prefer the explicit UIDPLUS path for iCloud.  Some live iCloud sessions
+    advertise MOVE but have been observed to acknowledge it without producing
+    the behavior our UI expects.  COPY + STORE \\Deleted + UID EXPUNGE is the
+    standards-defined equivalent and lets us verify each step and retain the
+    destination UID for Undo.
+    """
     caps = {
         c.decode().upper() if isinstance(c, bytes) else c.upper()
         for c in m.capabilities
     }
     m.response("COPYUID")  # discard stale mapping
+
+    if "UIDPLUS" in caps:
+        checked(m.uid("COPY", uid, quote(destination)))
+        validity, dest_uid = copy_mapping(m, uid)
+        record("copied", validity, dest_uid)
+        if not dest_uid:
+            raise MailError("missing_mapping")
+        checked(m.uid("STORE", uid, "+FLAGS.SILENT", r"(\Deleted)"))
+        checked(m.uid("EXPUNGE", uid))
+        verify_move(m, uid, validity, dest_uid, record)
+        record("moved", validity, dest_uid)
+        return validity, dest_uid
+
     if "MOVE" in caps:
         checked(m.uid("MOVE", uid, quote(destination)))
         validity, dest_uid = copy_mapping(m, uid)
         verify_move(m, uid, validity, dest_uid, record)
         record("moved", validity, dest_uid)
         return validity, dest_uid
-    if "UIDPLUS" not in caps:
-        raise MailError("unsafe_move")
-    checked(m.uid("COPY", uid, quote(destination)))
-    validity, dest_uid = copy_mapping(m, uid)
-    record("copied", validity, dest_uid)
-    if not dest_uid:
-        raise MailError("missing_mapping")
-    checked(m.uid("STORE", uid, "+FLAGS.SILENT", r"(\Deleted)"))
-    checked(m.uid("EXPUNGE", uid))
-    verify_move(m, uid, validity, dest_uid, record)
-    record("moved", validity, dest_uid)
-    return validity, dest_uid
+
+    raise MailError("unsafe_move")
 
 
 def verify_move(m, uid, validity, dest_uid, record):
