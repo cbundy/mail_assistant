@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.1.7-test"
+VERSION = "3.2.0-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -114,14 +114,105 @@ def show_error(code, detail=None):
 
 st.markdown(
     """<style>
-html,body,[data-testid="stApp"],input,textarea,button,label,p {font-family:Arial,sans-serif;font-size:15px!important;}
-h1,h2,h3,h4,[data-testid="stMetricValue"] {font-family:Arial,sans-serif;font-size:15px!important;font-weight:700;}
-[data-testid="stButton"] button,[data-testid="stLinkButton"] a {min-height:48px;border-radius:10px;font-size:15px!important;}
-[data-testid="stSidebar"] [data-testid="stButton"] button {justify-content:flex-start;}
-.st-key-company_list [data-testid="stButton"] button {min-height:32px;}
-.st-key-company_list [data-testid="stHorizontalBlock"] {align-items:center;}
-.st-key-company_list p {margin-bottom:0;}
-[data-testid="stMainBlockContainer"] {padding-top:1.5rem;padding-bottom:1.5rem;}
+:root {
+  --bg: #2E2535;
+  --surface: #3A2F43;
+  --surface-2: #4A3A59;
+  --lilac: #A57CD1;
+  --lilac-soft: #C7A7E6;
+  --text: #EBDCF8;
+  --warm: #FFEFD6;
+}
+html,body,[data-testid="stApp"],[data-testid="stAppViewContainer"],input,textarea,button,label,p {
+  font-family:Arial,sans-serif;
+  font-size:15px!important;
+}
+[data-testid="stAppViewContainer"], .stApp {
+  background:var(--bg)!important;
+  color:var(--text)!important;
+}
+[data-testid="stHeader"] {
+  background:rgba(46,37,53,.96)!important;
+}
+[data-testid="stSidebar"] {
+  background:var(--surface-2)!important;
+  border-right:1px solid rgba(199,167,230,.35);
+}
+[data-testid="stSidebar"] * { color:var(--text); }
+h1,h2,h3,h4,[data-testid="stMetricValue"] {
+  font-family:Arial,sans-serif;
+  font-size:15px!important;
+  font-weight:700;
+  color:var(--warm)!important;
+}
+p,label,[data-testid="stCaptionContainer"] { color:var(--text)!important; }
+a { color:var(--lilac-soft)!important; }
+[data-testid="stButton"] button,[data-testid="stLinkButton"] a {
+  min-height:46px;
+  border-radius:12px!important;
+  font-size:15px!important;
+  border:1px solid rgba(199,167,230,.55)!important;
+  background:var(--surface-2)!important;
+  color:var(--text)!important;
+  transition:all .15s ease;
+}
+[data-testid="stButton"] button:hover,[data-testid="stLinkButton"] a:hover {
+  background:var(--lilac-soft)!important;
+  color:var(--bg)!important;
+  border-color:var(--text)!important;
+}
+[data-testid="stButton"] button[kind="primary"] {
+  background:var(--lilac)!important;
+  color:var(--bg)!important;
+  border-color:var(--lilac-soft)!important;
+  font-weight:700!important;
+}
+[data-testid="stButton"] button:disabled {
+  background:#3B3143!important;
+  color:#877992!important;
+  border-color:#594A63!important;
+  opacity:.72!important;
+}
+[data-testid="stSidebar"] [data-testid="stButton"] button {
+  justify-content:flex-start;
+}
+[data-baseweb="input"] > div,
+[data-baseweb="select"] > div,
+[data-baseweb="textarea"] > div {
+  background:var(--surface)!important;
+  border-color:rgba(199,167,230,.4)!important;
+  color:var(--text)!important;
+}
+[data-baseweb="input"] input,
+[data-baseweb="textarea"] textarea {
+  color:var(--text)!important;
+}
+[data-baseweb="popover"] > div,
+[role="listbox"] {
+  background:var(--surface-2)!important;
+  color:var(--text)!important;
+}
+[data-testid="stVerticalBlockBorderWrapper"] > div {
+  border-color:rgba(199,167,230,.28)!important;
+}
+[data-testid="stProgress"] > div > div {
+  background:var(--lilac)!important;
+}
+.st-key-company_list [data-testid="stButton"] button { min-height:32px; }
+.st-key-company_list [data-testid="stHorizontalBlock"] { align-items:center; }
+.st-key-company_list p { margin-bottom:0; }
+[data-testid="stMainBlockContainer"] { padding-top:1.5rem;padding-bottom:1.5rem; }
+.build-badge {
+  display:inline-block;
+  margin:.15rem 0 .85rem 0;
+  padding:.32rem .65rem;
+  border:1px solid rgba(199,167,230,.4);
+  border-radius:999px;
+  background:rgba(165,124,209,.12);
+  color:#C7A7E6;
+  font-size:12px;
+  letter-spacing:.02em;
+}
 </style>""",
     unsafe_allow_html=True,
 )
@@ -268,7 +359,10 @@ def execute_pending_request(store):
 
 
 st.title("📬 iCloud Mail Assistant")
-st.warning("TEST BUILD 3.1.7 · fix/icloud-delete")
+st.markdown(
+    '<div class="build-badge">TEST BUILD 3.2.0 · fix/icloud-delete</div>',
+    unsafe_allow_html=True,
+)
 pages = {
     "mail": ("Почта", "Mail"),
     "white": ("Белый список", "Whitelist"),
@@ -277,6 +371,12 @@ pages = {
     "history": ("История", "History"),
     "settings": ("Настройки", "Settings"),
 }
+
+
+def reset_read_filter_selection():
+    ss.chosen_companies = []
+    ss.selection_version = ss.get("selection_version", 0) + 1
+    ss.preview = None
 
 
 def navigate(page):
@@ -720,41 +820,90 @@ else:
             )
         )
         action_area = st.container()
-        toolbar = st.columns([2, 1, 1, 1.5])
+
+        read_state_available = bool(scan["messages"]) and all(
+            "unread" in m for m in scan["messages"]
+        )
+        read_filters = {
+            "all": ("Все", "All"),
+            "unread": ("Непрочитанные", "Unread"),
+            "read": ("Прочитанные", "Read"),
+        }
+        stored_read_filter = store.get("read_filter", "all")
+        if stored_read_filter not in read_filters:
+            stored_read_filter = "all"
+        if not read_state_available:
+            stored_read_filter = "all"
+
+        filter_row = st.columns([2, 3])
         sorts = {
             "count": ("Больше всего писем", "Most emails"),
             "date": ("Последнее письмо", "Latest email"),
             "name": ("Название", "Name"),
             "deleted": ("Удалено за 30 дней", "Deleted in the last 30 days"),
         }
-        sort = toolbar[0].selectbox(
+        sort = filter_row[0].selectbox(
             T("Сортировка", "Sort"),
             list(sorts),
             index=list(sorts).index(store.get("sort", "count")),
             format_func=lambda k: T(*sorts[k]),
             label_visibility="collapsed",
         )
+        read_filter = filter_row[1].radio(
+            T("Показывать письма", "Show messages"),
+            list(read_filters),
+            index=list(read_filters).index(stored_read_filter),
+            format_func=lambda k: T(*read_filters[k]),
+            horizontal=True,
+            key="read_filter_control",
+            disabled=not read_state_available,
+            on_change=reset_read_filter_selection,
+        )
+        if not read_state_available:
+            st.caption(
+                T(
+                    "Чтобы фильтровать прочитанные и непрочитанные письма, один раз пересканируй почту.",
+                    "Rescan the inbox once to enable read/unread filtering.",
+                )
+            )
+            read_filter = "all"
         store.set("sort", sort)
+        store.set("read_filter", read_filter)
+
+        def view_messages(group):
+            return [
+                m
+                for m in group["messages"]
+                if service.matches_read_filter(m, read_filter)
+            ]
+
         visible = [
             g
             for g in groups
-            if query.casefold() in (g["name"] + " " + " ".join(g["senders"])).casefold()
+            if query.casefold()
+            in (g["name"] + " " + " ".join(g["senders"])).casefold()
+            and (read_filter == "all" or view_messages(g))
         ]
         visible.sort(
             key=lambda g: (
-                len(g["messages"])
+                len(view_messages(g))
                 if sort == "count"
                 else (
-                    g["latest"]
+                    max(
+                        (m["received"] for m in view_messages(g)),
+                        default=g["latest"],
+                    )
                     if sort == "date"
                     else g["recent"] if sort == "deleted" else g["name"].casefold()
                 )
             ),
             reverse=sort != "name",
         )
+
+        toolbar = st.columns([1, 1, 1.5])
         version = ss.get("selection_version", 0)
         select_key = lambda g: f"company_{version}_{g['key']}"
-        buttons = toolbar[1:]
+        buttons = toolbar
         if buttons[0].button(T("Выбрать всё", "Select all")):
             for g in visible:
                 ss[select_key(g)] = not g["protected"]
@@ -762,20 +911,19 @@ else:
             for g in groups:
                 ss[select_key(g)] = False
             ss.chosen_companies = []
-            mark_preview_stale()
         if buttons[2].button(T("Выбрать чёрный список", "Select blacklist")):
             for g in visible:
                 ss[select_key(g)] = g["black"] and not g["protected"]
-            mark_preview_stale()
         # Widget-independent selection survives search, dialogs and worker reruns.
         chosen = set(ss.get("chosen_companies", []))
         with st.container(height=390, key="company_list", border=True):
-            heads = st.columns([4, 1, 2, 1.5])
+            heads = st.columns([4, 1, 1, 2, 1.5])
             for col, label in zip(
                 heads,
                 [
                     T("Компания", "Company"),
                     T("Писем", "Emails"),
+                    T("Непроч.", "Unread"),
                     T("Последнее", "Latest"),
                     T("Просмотр", "Preview"),
                 ],
@@ -784,7 +932,7 @@ else:
             for g in visible:
                 if select_key(g) not in ss:
                     ss[select_key(g)] = g["key"] in chosen
-                cols = st.columns([4, 1, 2, 1.5])
+                cols = st.columns([4, 1, 1, 2, 1.5])
                 checked = cols[0].checkbox(
                     g["name"] + (" 🔒" if g["protected"] else ""),
                     key=select_key(g),
@@ -794,9 +942,18 @@ else:
                     chosen.add(g["key"])
                 else:
                     chosen.discard(g["key"])
-                cols[1].write(str(len(g["messages"])))
-                cols[2].write(date(g["latest"]).split(" ")[0])
-                if cols[3].button(
+                shown_messages = view_messages(g)
+                unread_count = sum(
+                    1 for m in g["messages"] if m.get("unread") is True
+                )
+                latest_shown = max(
+                    (m["received"] for m in shown_messages),
+                    default=g["latest"],
+                )
+                cols[1].write(str(len(shown_messages)))
+                cols[2].write(str(unread_count))
+                cols[3].write(date(latest_shown).split(" ")[0])
+                if cols[4].button(
                     T("Письма", "Emails"), key="view_" + g["key"], width="stretch"
                 ):
                     ss.view_company = g["key"]
@@ -894,15 +1051,21 @@ else:
                     mode,
                     scope,
                     allow_white,
+                    read_filter,
                 )
             preview = ss.get("preview")
             if preview:
                 preview_mode = preview["mode"]
+                preview_read_filter = preview.get("read_filter", "all")
                 st.subheader(
                     T("Предпросмотр и подтверждение", "Preview and confirmation")
                 )
                 with st.expander(T("Выбранные компании", "Selected companies")):
                     st.write(", ".join(preview["companies"]))
+                st.caption(
+                    T("Фильтр писем: ", "Message filter: ")
+                    + T(*read_filters.get(preview_read_filter, read_filters["all"]))
+                )
                 targets = preview["targets"]
                 if preview_mode != "unsubscribe_only" and not targets:
                     st.warning(
