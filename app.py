@@ -18,13 +18,19 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.2.0-test"
+VERSION = "3.3.0-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
     ss.language = preferences.get("language", "Русский")
 
 LANGUAGE = ss.language
+if "dark_theme" not in ss:
+    ss.dark_theme = preferences.get("theme_mode", "light") == "dark"
+
+
+def save_theme():
+    preferences.set("theme_mode", "dark" if ss.dark_theme else "light")
 
 
 def T(ru, en):
@@ -112,107 +118,175 @@ def show_error(code, detail=None):
         st.code(detail or code)
 
 
+THEME = (
+    {
+        "bg": "#100D14",
+        "surface": "#17131C",
+        "surface2": "#1E1825",
+        "sidebar": "#141018",
+        "text": "#F1ECF5",
+        "muted": "#B7AFC0",
+        "border": "#342A3D",
+        "primary": "#A57CD1",
+        "primary_hover": "#C7A7E6",
+        "primary_text": "#160F1C",
+        "input": "#17131C",
+    }
+    if ss.dark_theme
+    else {
+        "bg": "#FAFBFC",
+        "surface": "#F4F6F8",
+        "surface2": "#F0F2F5",
+        "sidebar": "#F1F4F7",
+        "text": "#2C3340",
+        "muted": "#68717D",
+        "border": "#DEE2E6",
+        "primary": "#A57CD1",
+        "primary_hover": "#C7A7E6",
+        "primary_text": "#25172F",
+        "input": "#FFFFFF",
+    }
+)
+
 st.markdown(
-    """<style>
-:root {
-  --bg: #2E2535;
-  --surface: #3A2F43;
-  --surface-2: #4A3A59;
-  --lilac: #A57CD1;
-  --lilac-soft: #C7A7E6;
-  --text: #EBDCF8;
-  --warm: #FFEFD6;
-}
-html,body,[data-testid="stApp"],[data-testid="stAppViewContainer"],input,textarea,button,label,p {
-  font-family:Arial,sans-serif;
-  font-size:15px!important;
-}
-[data-testid="stAppViewContainer"], .stApp {
-  background:var(--bg)!important;
-  color:var(--text)!important;
-}
-[data-testid="stHeader"] {
-  background:rgba(46,37,53,.96)!important;
-}
-[data-testid="stSidebar"] {
-  background:var(--surface-2)!important;
-  border-right:1px solid rgba(199,167,230,.35);
-}
-[data-testid="stSidebar"] * { color:var(--text); }
-h1,h2,h3,h4,[data-testid="stMetricValue"] {
-  font-family:Arial,sans-serif;
-  font-size:15px!important;
-  font-weight:700;
-  color:var(--warm)!important;
-}
-p,label,[data-testid="stCaptionContainer"] { color:var(--text)!important; }
-a { color:var(--lilac-soft)!important; }
-[data-testid="stButton"] button,[data-testid="stLinkButton"] a {
-  min-height:46px;
-  border-radius:12px!important;
-  font-size:15px!important;
-  border:1px solid rgba(199,167,230,.55)!important;
-  background:var(--surface-2)!important;
-  color:var(--text)!important;
-  transition:all .15s ease;
-}
-[data-testid="stButton"] button:hover,[data-testid="stLinkButton"] a:hover {
-  background:var(--lilac-soft)!important;
-  color:var(--bg)!important;
-  border-color:var(--text)!important;
-}
-[data-testid="stButton"] button[kind="primary"] {
-  background:var(--lilac)!important;
-  color:var(--bg)!important;
-  border-color:var(--lilac-soft)!important;
-  font-weight:700!important;
-}
-[data-testid="stButton"] button:disabled {
-  background:#3B3143!important;
-  color:#877992!important;
-  border-color:#594A63!important;
-  opacity:.72!important;
-}
-[data-testid="stSidebar"] [data-testid="stButton"] button {
-  justify-content:flex-start;
-}
+    f"""<style>
+:root {{
+  --app-bg: {THEME["bg"]};
+  --surface: {THEME["surface"]};
+  --surface-2: {THEME["surface2"]};
+  --sidebar: {THEME["sidebar"]};
+  --text: {THEME["text"]};
+  --muted: {THEME["muted"]};
+  --border: {THEME["border"]};
+  --primary: {THEME["primary"]};
+  --primary-hover: {THEME["primary_hover"]};
+  --primary-text: {THEME["primary_text"]};
+  --input: {THEME["input"]};
+}}
+html, body, [data-testid="stApp"], [data-testid="stAppViewContainer"] {{
+  background: var(--app-bg) !important;
+  color: var(--text) !important;
+}}
+html, body, input, textarea, button, label, p {{
+  font-family: "Segoe UI", Inter, Arial, sans-serif;
+  font-size: 14px !important;
+}}
+[data-testid="stHeader"] {{
+  background: color-mix(in srgb, var(--app-bg) 96%, transparent) !important;
+}}
+[data-testid="stSidebar"] {{
+  background: var(--sidebar) !important;
+  border-right: 1px solid var(--border) !important;
+}}
+[data-testid="stSidebar"] * {{ color: var(--text); }}
+h1 {{
+  font-size: 24px !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.02em;
+  color: var(--text) !important;
+}}
+h2, h3, h4, [data-testid="stMetricValue"] {{
+  color: var(--text) !important;
+  font-weight: 650 !important;
+}}
+p, label, [data-testid="stCaptionContainer"] {{ color: var(--text) !important; }}
+[data-testid="stCaptionContainer"] p {{ color: var(--muted) !important; }}
+a {{ color: var(--primary) !important; }}
+
+[data-testid="stButton"] button,
+[data-testid="stLinkButton"] a {{
+  min-height: 40px;
+  border-radius: 4px !important;
+  border: 1px solid var(--border) !important;
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  font-weight: 500 !important;
+  box-shadow: none !important;
+}}
+[data-testid="stButton"] button:hover,
+[data-testid="stLinkButton"] a:hover {{
+  border-color: var(--primary) !important;
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface)) !important;
+}}
+[data-testid="stButton"] button[kind="primary"] {{
+  background: var(--primary) !important;
+  color: var(--primary-text) !important;
+  border-color: var(--primary) !important;
+  font-weight: 650 !important;
+}}
+[data-testid="stButton"] button[kind="primary"]:hover {{
+  background: var(--primary-hover) !important;
+  border-color: var(--primary-hover) !important;
+}}
+[data-testid="stButton"] button:disabled {{
+  opacity: .48 !important;
+  background: var(--surface-2) !important;
+  color: var(--muted) !important;
+}}
+
 [data-baseweb="input"] > div,
 [data-baseweb="select"] > div,
-[data-baseweb="textarea"] > div {
-  background:var(--surface)!important;
-  border-color:rgba(199,167,230,.4)!important;
-  color:var(--text)!important;
-}
+[data-baseweb="textarea"] > div {{
+  background: var(--input) !important;
+  border-color: var(--border) !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+}}
 [data-baseweb="input"] input,
-[data-baseweb="textarea"] textarea {
-  color:var(--text)!important;
-}
+[data-baseweb="textarea"] textarea {{
+  color: var(--text) !important;
+}}
 [data-baseweb="popover"] > div,
-[role="listbox"] {
-  background:var(--surface-2)!important;
-  color:var(--text)!important;
-}
-[data-testid="stVerticalBlockBorderWrapper"] > div {
-  border-color:rgba(199,167,230,.28)!important;
-}
-[data-testid="stProgress"] > div > div {
-  background:var(--lilac)!important;
-}
-.st-key-company_list [data-testid="stButton"] button { min-height:32px; }
-.st-key-company_list [data-testid="stHorizontalBlock"] { align-items:center; }
-.st-key-company_list p { margin-bottom:0; }
-[data-testid="stMainBlockContainer"] { padding-top:1.5rem;padding-bottom:1.5rem; }
-.build-badge {
-  display:inline-block;
-  margin:.15rem 0 .85rem 0;
-  padding:.32rem .65rem;
-  border:1px solid rgba(199,167,230,.4);
-  border-radius:999px;
-  background:rgba(165,124,209,.12);
-  color:#C7A7E6;
-  font-size:12px;
-  letter-spacing:.02em;
-}
+[role="listbox"] {{
+  background: var(--surface) !important;
+  color: var(--text) !important;
+}}
+[data-testid="stVerticalBlockBorderWrapper"] > div {{
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+}}
+[data-testid="stProgress"] > div > div {{ background: var(--primary) !important; }}
+[data-testid="stDataFrame"] {{ border-color: var(--border) !important; }}
+[data-testid="stAlert"] {{
+  border-radius: 4px !important;
+  box-shadow: none !important;
+}}
+[data-testid="stRadio"] [role="radiogroup"] {{
+  gap: .9rem;
+}}
+[data-testid="stSidebar"] [data-testid="stButton"] button {{
+  justify-content: flex-start;
+}}
+.st-key-company_list [data-testid="stButton"] button {{
+  min-height: 30px;
+}}
+.st-key-company_list [data-testid="stHorizontalBlock"] {{
+  align-items: center;
+}}
+.st-key-company_list p {{ margin-bottom: 0; }}
+[data-testid="stMainBlockContainer"] {{
+  padding-top: 1.1rem;
+  padding-bottom: 1.5rem;
+  max-width: 1180px;
+}}
+.build-label {{
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  margin-top: -.3rem;
+}}
+.section-label {{
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+  margin: .25rem 0 .35rem 0;
+}}
 </style>""",
     unsafe_allow_html=True,
 )
@@ -358,11 +432,19 @@ def execute_pending_request(store):
     st.rerun()
 
 
-st.title("📬 iCloud Mail Assistant")
-st.markdown(
-    '<div class="build-badge">TEST BUILD 3.2.0 · fix/icloud-delete</div>',
-    unsafe_allow_html=True,
-)
+header_left, header_right = st.columns([8, 1.4], vertical_alignment="center")
+with header_left:
+    st.title("📬 iCloud Mail Assistant")
+    st.markdown(
+        f'<div class="build-label">TEST BUILD {VERSION} · fix/icloud-delete</div>',
+        unsafe_allow_html=True,
+    )
+with header_right:
+    st.toggle(
+        T("Тёмная тема", "Dark theme"),
+        key="dark_theme",
+        on_change=save_theme,
+    )
 pages = {
     "mail": ("Почта", "Mail"),
     "white": ("Белый список", "Whitelist"),
