@@ -92,7 +92,7 @@ def fetch(m, uids, progress=lambda *a: None):
             m.uid(
                 "FETCH",
                 ",".join(batch),
-                "(UID INTERNALDATE BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID LIST-ID LIST-UNSUBSCRIBE LIST-UNSUBSCRIBE-POST)])",
+                "(UID FLAGS INTERNALDATE BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID LIST-ID LIST-UNSUBSCRIBE LIST-UNSUBSCRIBE-POST)])",
             )
         )
         for row in rows:
@@ -105,6 +105,13 @@ def fetch(m, uids, progress=lambda *a: None):
             msg = email.message_from_bytes(raw)
             name, sender = parseaddr(msg.get("From", ""))
             subject = decode_header_text(msg.get("Subject", ""))
+            flags_match = re.search(rb"\bFLAGS \(([^)]*)\)", meta)
+            flags = (
+                flags_match[1].lower().split()
+                if flags_match
+                else []
+            )
+            unread = b"\\seen" not in flags
             dt = re.search(rb'INTERNALDATE "([^"]+)"', meta)
             try:
                 received = (
@@ -121,6 +128,7 @@ def fetch(m, uids, progress=lambda *a: None):
                     subject=subject,
                     date=decode_header_text(msg.get("Date", "")),
                     received=received,
+                    unread=unread,
                     kind=classify_subject(subject),
                     message_id=msg.get("Message-ID", ""),
                     list_id=msg.get("List-ID", ""),
@@ -224,7 +232,15 @@ def unsubscribe_targets(messages):
     return list(targets.values())
 
 
-def prepare(store, password, keys, mode, scope, allow_white, progress):
+def matches_read_filter(message, read_filter):
+    if read_filter == "unread":
+        return message.get("unread") is True
+    if read_filter == "read":
+        return message.get("unread") is False
+    return True
+
+
+def prepare(store, password, keys, mode, scope, allow_white, read_filter, progress):
     chosen = [g for g in companies(store) if g["key"] in keys]
     if not chosen:
         raise MailError("empty")
@@ -243,7 +259,7 @@ def prepare(store, password, keys, mode, scope, allow_white, progress):
         messages = [
             x
             for x in fetch(m, sorted(uids, key=int), progress)
-            if x["sender"] in senders
+            if x["sender"] in senders and matches_read_filter(x, read_filter)
         ]
     targets = [
         x
@@ -254,6 +270,7 @@ def prepare(store, password, keys, mode, scope, allow_white, progress):
         keys=sorted(keys),
         mode=mode,
         scope=scope,
+        read_filter=read_filter,
         allow_white=allow_white,
         validity=validity,
         targets=targets,
