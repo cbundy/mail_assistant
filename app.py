@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import pandas as pd
 import streamlit as st
 from storage import Store
+from session_store import COOKIE, SessionStore
 import mail_service as service
 
 st.set_page_config(
@@ -18,21 +19,31 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.3.11-test"
+VERSION = "3.4.0"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
     ss.language = preferences.get("language", "Русский")
 
 LANGUAGE = ss.language
-if "dark_theme" not in ss:
-    ss.dark_theme = preferences.get("theme_mode", "light") == "dark"
 if "font_size" not in ss:
     ss.font_size = int(preferences.get("font_size", 16) or 16)
 
+# The browser picks the light or dark theme from .streamlit/config.toml: the
+# user's choice in localStorage if there is one, otherwise the system setting.
+# This key and value format match Settings -> Theme in the Streamlit 1.65
+# frontend (utils.*.js: `stActiveTheme-${location.pathname}-v2`, JSON "Light",
+# "Dark" or "System"), so the toggle and that menu share one setting.
+THEME_SWITCH_JS = """<script>
+localStorage.setItem(
+  "stActiveTheme-" + window.location.pathname + "-v2", JSON.stringify(%s)
+);
+window.location.reload();
+</script>"""
 
-def save_theme():
-    preferences.set("theme_mode", "dark" if ss.dark_theme else "light")
+
+def request_theme_switch():
+    ss.theme_switch = "Dark" if ss.dark_theme else "Light"
 
 
 def save_font_size():
@@ -124,200 +135,65 @@ def show_error(code, detail=None):
         st.code(detail or code)
 
 
-THEME = (
-    {
-        "bg": "#100D14",
-        "surface": "#17131C",
-        "surface2": "#1E1825",
-        "sidebar": "#141018",
-        "text": "#F1ECF5",
-        "muted": "#B7AFC0",
-        "border": "#342A3D",
-        "primary": "#A57CD1",
-        "primary_hover": "#C7A7E6",
-        "primary_text": "#160F1C",
-        "input": "#17131C",
-    }
-    if ss.dark_theme
-    else {
-        "bg": "#FAFBFC",
-        "surface": "#F4F6F8",
-        "surface2": "#F0F2F5",
-        "sidebar": "#F1F4F7",
-        "text": "#2C3340",
-        "muted": "#68717D",
-        "border": "#DEE2E6",
-        "primary": "#A57CD1",
-        "primary_hover": "#C7A7E6",
-        "primary_text": "#25172F",
-        "input": "#FFFFFF",
-    }
-)
-
+# Colours come from the active Streamlit theme (.streamlit/config.toml). The
+# few custom elements below derive theirs from currentColor (the theme's text
+# colour), so they follow light/dark without knowing which one is active.
 st.markdown(
     f"""<style>
 :root {{
-  --app-bg: {THEME["bg"]};
-  --surface: {THEME["surface"]};
-  --surface-2: {THEME["surface2"]};
-  --sidebar: {THEME["sidebar"]};
-  --text: {THEME["text"]};
-  --muted: {THEME["muted"]};
-  --border: {THEME["border"]};
-  --primary: {THEME["primary"]};
-  --primary-hover: {THEME["primary_hover"]};
-  --primary-text: {THEME["primary_text"]};
-  --input: {THEME["input"]};
-}}
-html, body, [data-testid="stApp"], [data-testid="stAppViewContainer"] {{
-  background: var(--app-bg) !important;
-  color: var(--text) !important;
+  --primary: #A57CD1;
+  --primary-hover: #C7A7E6;
+  --primary-text: #25172F;
+  --line: color-mix(in srgb, currentColor 16%, transparent);
+  --tint: color-mix(in srgb, currentColor 5%, transparent);
 }}
 html, body, input, textarea, button, label, p {{
   font-family: "Segoe UI", Inter, Arial, sans-serif;
   font-size: {ss.font_size}px !important;
 }}
-[data-testid="stHeader"] {{
-  background: color-mix(in srgb, var(--app-bg) 96%, transparent) !important;
-}}
-[data-testid="stSidebar"] {{
-  background: var(--sidebar) !important;
-  border-right: 1px solid var(--border) !important;
-}}
-[data-testid="stSidebar"] * {{ color: var(--text); }}
 h1 {{
   font-size: clamp(34px, 3vw, 46px) !important;
   line-height: 1.02 !important;
   font-weight: 750 !important;
   letter-spacing: -0.035em;
-  color: var(--text) !important;
   margin-bottom: .2rem !important;
 }}
 h2, h3, h4, [data-testid="stMetricValue"] {{
-  color: var(--text) !important;
   font-weight: 650 !important;
 }}
 h2 {{ font-size: {ss.font_size + 5}px !important; }}
 h3 {{ font-size: {ss.font_size + 3}px !important; }}
-p, label, [data-testid="stCaptionContainer"] {{ color: var(--text) !important; }}
-[data-testid="stCaptionContainer"] p {{ color: var(--muted) !important; }}
-a {{ color: var(--primary) !important; }}
 
 [data-testid="stButton"] button,
 [data-testid="stLinkButton"] a {{
   min-height: 40px;
   border-radius: 12px !important;
-  border: 1px solid var(--border) !important;
-  background: var(--surface) !important;
-  color: var(--text) !important;
   font-weight: 500 !important;
   box-shadow: none !important;
 }}
-[data-testid="stButton"] button:hover,
-[data-testid="stLinkButton"] a:hover {{
-  border-color: var(--primary) !important;
-  background: color-mix(in srgb, var(--primary) 12%, var(--surface)) !important;
-}}
+/* White on the lilac primary is ~3:1; dark text keeps it readable. */
 [data-testid="stButton"] button[kind="primary"] {{
-  background: var(--primary) !important;
-  color: var(--primary-text) !important;
-  border-color: var(--primary) !important;
   font-weight: 650 !important;
 }}
-[data-testid="stButton"] button[kind="primary"]:hover {{
+[data-testid="stButton"] button[kind="primary"]:not(:disabled) {{
+  color: var(--primary-text) !important;
+}}
+[data-testid="stButton"] button[kind="primary"]:not(:disabled):hover {{
   background: var(--primary-hover) !important;
   border-color: var(--primary-hover) !important;
 }}
-[data-testid="stButton"] button:disabled {{
-  opacity: .48 !important;
-  background: var(--surface-2) !important;
-  color: var(--muted) !important;
-}}
-
-[data-baseweb="input"] > div,
-[data-baseweb="select"] > div,
-[data-baseweb="textarea"] > div,
-[data-testid="stTextInput"] > div > div,
-[data-testid="stSelectbox"] > div > div,
-[data-testid="stNumberInput"] > div > div {{
-  background: var(--input) !important;
-  border-color: var(--border) !important;
-  border-radius: 12px !important;
-  box-shadow: none !important;
-}}
-[data-baseweb="input"] input,
-[data-baseweb="textarea"] textarea,
-[data-testid="stTextInput"] input,
-[data-testid="stNumberInput"] input {{
-  background: var(--input) !important;
-  color: var(--text) !important;
-  -webkit-text-fill-color: var(--text) !important;
-  border-radius: 12px !important;
-}}
-[data-baseweb="select"] * {{
-  color: var(--text) !important;
-}}
-[data-baseweb="select"] svg,
-[data-testid="stTextInput"] svg {{
-  fill: var(--text) !important;
-  color: var(--text) !important;
-}}
-input::placeholder,
-textarea::placeholder {{
-  color: var(--muted) !important;
-  opacity: .9 !important;
-}}
-[data-baseweb="base-input"],
-[data-baseweb="input"],
-[data-baseweb="select"] > div,
-[data-baseweb="textarea"],
-[data-baseweb="textarea"] > div,
-[data-testid="stTextInput"] input,
-[data-testid="stNumberInput"] input,
-[data-testid="stSelectbox"] [role="combobox"],
-[data-testid="stSelectbox"] div[data-baseweb="select"] > div {{
-  background-color: var(--input) !important;
-  background: var(--input) !important;
-  color: var(--text) !important;
-  border-color: var(--border) !important;
-  border-radius: 12px !important;
-  box-shadow: none !important;
-}}
-[data-testid="stSelectbox"] [role="combobox"] * {{
-  color: var(--text) !important;
-}}
-[data-testid="stSelectbox"] svg,
-[data-testid="stTextInput"] svg,
-[data-testid="stNumberInput"] svg {{
-  color: var(--text) !important;
-  fill: var(--text) !important;
-}}
-[data-baseweb="popover"] > div,
-[role="listbox"] {{
-  background: var(--surface) !important;
-  color: var(--text) !important;
-}}
-[data-testid="stVerticalBlockBorderWrapper"] > div {{
-  background: var(--surface) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 12px !important;
-  box-shadow: none !important;
-}}
-[data-testid="stProgress"] > div > div {{ background: var(--primary) !important; }}
-[data-testid="stDataFrame"] {{ border-color: var(--border) !important; }}
-[data-testid="stAlert"] {{
-  border-radius: 12px !important;
-  box-shadow: none !important;
+/* Secondary buttons sit on a faint tint of the text colour, like the rows. */
+[data-testid="stButton"] button:not([kind="primary"]),
+[data-testid="stLinkButton"] a {{
+  background-image: linear-gradient(var(--tint), var(--tint)) !important;
 }}
 [data-testid="stRadio"] [role="radiogroup"] {{
   gap: .9rem;
 }}
 [data-testid="stRadio"] label,
-[data-testid="stCheckbox"] label,
-[data-testid="stToggle"] label {{
+[data-testid="stCheckbox"] label {{
   border-radius: 10px !important;
 }}
-[data-testid="stVerticalBlockBorderWrapper"] > div,
 [data-testid="stDialog"] > div {{
   border-radius: 14px !important;
 }}
@@ -330,7 +206,7 @@ textarea::placeholder {{
 }}
 /* Keyed containers are the bordered element in current Streamlit. */
 .st-key-company_table {{
-  border: 1px solid var(--border) !important;
+  border: 1px solid var(--line) !important;
   border-radius: 12px !important;
   padding: .65rem !important;
   gap: .45rem !important;
@@ -343,7 +219,7 @@ textarea::placeholder {{
 [class*="st-key-company_row_"] {{
   box-sizing: border-box;
   padding: .2rem .5rem !important;
-  border: 1px solid var(--border) !important;
+  border: 1px solid var(--line) !important;
   border-radius: 10px !important;
   gap: 0 !important;
 }}
@@ -352,8 +228,13 @@ textarea::placeholder {{
   padding-top: 0 !important;
   padding-bottom: 0 !important;
 }}
+/* Streamlit's -1rem markdown margin offsets a trailing <p> margin; these cells are
+   bare <div>s, so it collapsed the column header and the first row overlapped it. */
+.st-key-company_list [data-testid="stMarkdownContainer"] {{
+  margin-bottom: 0 !important;
+}}
 [class*="st-key-company_row_"] {{
-  background: var(--surface-2) !important;
+  background: var(--tint) !important;
 }}
 .st-key-company_list [data-testid="stHorizontalBlock"] {{
   align-items: center !important;
@@ -362,7 +243,7 @@ textarea::placeholder {{
   margin: 0 !important;
 }}
 .company-col-head {{
-  color: var(--muted);
+  opacity: .68;
   line-height: 1.2;
 }}
 .company-col-head.center {{ text-align: center; }}
@@ -391,7 +272,7 @@ textarea::placeholder {{
   max-width: 1180px;
 }}
 /* One native, accessible toggle: label and track share the same flex row.
-   Streamlit renders st.toggle as stCheckbox, not stToggle. */
+   Streamlit renders st.toggle as stCheckbox. */
 .st-key-theme_toggle_area {{
   padding-top: 2.35rem;
   padding-right: 0;
@@ -433,7 +314,7 @@ textarea::placeholder {{
   display: flex !important;
   align-items: center !important;
   transform: none !important;
-  background: var(--border) !important;
+  background: color-mix(in srgb, currentColor 22%, transparent) !important;
 }}
 .st-key-theme_toggle_area [data-testid="stCheckbox"] label > div:first-of-type > div {{
   box-sizing: border-box !important;
@@ -460,7 +341,6 @@ textarea::placeholder {{
   line-height: 1.25 !important;
 }}
 .st-key-theme_toggle_area [data-testid="stWidgetLabel"] p {{
-  color: var(--text) !important;
   font-size: {ss.font_size}px !important;
   font-weight: 550;
   white-space: nowrap;
@@ -484,14 +364,14 @@ textarea::placeholder {{
 .st-key-login_settings {{
   margin-top: 1.8rem;
   padding-top: 1.15rem;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--line);
 }}
 .st-key-login_settings [data-testid="stSelectbox"],
 .st-key-login_settings [data-testid="stSlider"] {{
   margin-bottom: .8rem;
 }}
 .build-label {{
-  color: var(--muted);
+  opacity: .68;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: .04em;
@@ -499,7 +379,7 @@ textarea::placeholder {{
   margin-top: -.3rem;
 }}
 .section-label {{
-  color: var(--muted);
+  opacity: .68;
   font-size: 12px;
   font-weight: 650;
   letter-spacing: .035em;
@@ -660,11 +540,20 @@ with header_left:
     )
 with header_right:
     with st.container(key="theme_toggle_area"):
+        theme_switch = ss.pop("theme_switch", None)
+        if theme_switch is None:
+            # Reflect the theme the browser is actually showing.
+            ss.dark_theme = st.context.theme.type == "dark"
         st.toggle(
             T("Тёмная тема", "Dark theme"),
             key="dark_theme",
-            on_change=save_theme,
+            on_change=request_theme_switch,
         )
+        if theme_switch:
+            st.html(
+                THEME_SWITCH_JS % json.dumps(theme_switch),
+                unsafe_allow_javascript=True,
+            )
 pages = {
     "mail": ("Почта", "Mail"),
     "white": ("Белый список", "Whitelist"),
@@ -706,16 +595,52 @@ def sidebar():
         if st.button(
             T("Выйти", "Sign out"), key="signout", width="stretch", disabled=busy
         ):
+            sessions.revoke(ss.get("session_token"))
             lang = ss.language
             for key in list(ss):
                 del ss[key]
             ss.language = lang
+            ss.forget_cookie = True
             st.rerun()
         st.caption(f"v{VERSION}")
 
 
+@st.cache_resource
+def signed_in_sessions():
+    # One store per server process; see session_store.py for the security model.
+    return SessionStore()
+
+
+def write_cookie(token):
+    # Streamlit cannot set cookies from Python, so the page sets it. A session
+    # cookie (no Expires/Max-Age); an empty token deletes it.
+    value = f"{COOKIE}={token}; Path=/; SameSite=Strict" + ("" if token else "; Max-Age=0")
+    st.html(
+        f"<script>document.cookie = {json.dumps(value)}"
+        " + (location.protocol === 'https:' ? '; Secure' : '');</script>",
+        unsafe_allow_javascript=True,
+    )
+
+
+# Restore a sign-in after a browser refresh. st.context.cookies holds the
+# cookies sent when this browser session connected.
+sessions = signed_in_sessions()
+cookie_token = st.context.cookies.get(COOKIE)
+if ss.get("session_token"):
+    sessions.lookup(ss.session_token)  # restart the idle timer
+elif cookie_token and not ss.get("account") and not ss.get("job"):
+    restored = sessions.lookup(cookie_token)
+    if restored:
+        ss.account, ss.password = restored
+        ss.session_token = cookie_token
+    else:
+        ss.forget_cookie = True
+
 if ss.get("account"):
     sidebar()
+    if ss.get("session_token") and cookie_token != ss.session_token:
+        with st.sidebar:  # keeps the empty script element out of the page layout
+            write_cookie(ss.session_token)
 if ss.get("job"):
     job = ss.job
     if not job.done:
@@ -767,6 +692,7 @@ if ss.get("job"):
     elif job.kind == "login":
         ss.account = job.result
         ss.password = ss.pop("pending_password", "")
+        ss.session_token = sessions.create(ss.account, ss.password)
         ss.pop("password_input", None)
         st.rerun()
     elif job.kind == "prepare":
@@ -841,8 +767,8 @@ if not ss.get("account"):
         )
         st.caption(
             T(
-                "Пароль используется только в памяти текущей сессии и не записывается на диск. История и заголовки писем хранятся локально.",
-                "Your password stays in session memory and is never written to disk. History and message headers are stored locally.",
+                "Пароль хранится только в памяти приложения до выхода или перезапуска и не записывается на диск. История и заголовки писем хранятся локально.",
+                "Your password stays in app memory until you sign out or the app restarts, and is never written to disk. History and message headers are stored locally.",
             )
         )
 
@@ -878,6 +804,8 @@ if not ss.get("account"):
                     "Changes text size throughout the interface.",
                 ),
             )
+    if ss.get("forget_cookie"):
+        write_cookie("")
     st.stop()
 
 store = Store(ss.account)
@@ -951,7 +879,10 @@ if page in ("white", "black"):
         store.policy(remove, "")
         ss.preview = None
         st.rerun()
-    st.dataframe(pd.DataFrame({"Email": current}), hide_index=True, width="stretch")
+    if current:
+        st.dataframe(pd.DataFrame({"Email": current}), hide_index=True, width="stretch")
+    else:
+        st.caption(T("Список пуст.", "The list is empty."))
 
 elif page == "groups":
     st.subheader(T("Ручная группировка", "Manual grouping"))
@@ -1027,7 +958,10 @@ elif page == "history":
                 T("Возвращено", "Restored"): d.get("restored", 0),
             }
         )
-    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    if rows:
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    else:
+        st.caption(T("Действий пока не было.", "No actions yet."))
     st.caption(
         T(
             "interrupted означает, что предыдущий процесс завершился до финального статуса. partial — действие дошло до ошибки, но часть шагов могла успеть выполниться.",

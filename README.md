@@ -40,7 +40,7 @@ For macOS/Linux: create a virtual environment, install `requirements.txt`, then 
 - Whitelist protection: “Select all” skips protected companies; manually selecting one requires explicit permission. Protection is checked again before execution.
 - Blacklist: a saved selection aid, not an automatic deletion rule.
 - Merge selected sender addresses, split selected senders out of a group, and reset manual grouping rules.
-- Account-scoped SQLite storage for scans, settings, history, lists, grouping, unsubscribe requests and Undo records. Language, scan limit, sorting and action preferences are remembered. Passwords stay only in session memory.
+- Account-scoped SQLite storage for scans, settings, history, lists, grouping, unsubscribe requests and Undo records. Language, scan limit, sorting and action preferences are remembered. Passwords stay only in app memory: a browser refresh keeps you signed in, while signing out or restarting the app requires signing in again. They are never written to disk.
 
 ### Important behavior
 
@@ -96,7 +96,7 @@ Run `python -m unittest discover -s tests -v` for backend and Streamlit UI tests
 - Белый список: защита от массового выбора, отдельное разрешение для ручного действия.
 - Чёрный список: сохранённый список для быстрого выбора, без автоматического удаления.
 - Ручное объединение, разделение выбранных отправителей и возврат к автоматической группировке.
-- Локальная SQLite-база отдельно по аккаунтам. Язык, сортировка, объём сканирования и режим запоминаются. Пароль остаётся только в памяти сессии.
+- Локальная SQLite-база отдельно по аккаунтам. Язык, сортировка, объём сканирования и режим запоминаются. Пароль хранится только в памяти приложения: после обновления страницы вход сохраняется, а после выхода или перезапуска приложения нужно войти снова. На диск пароль не записывается.
 
 ### Что нужно учитывать
 

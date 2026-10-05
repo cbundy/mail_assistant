@@ -3,7 +3,8 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
+from streamlit.runtime.context import ContextProxy, StreamlitTheme
 from streamlit.testing.v1 import AppTest
 import storage
 import mail_service as svc
@@ -46,13 +47,36 @@ class UITests(unittest.TestCase):
         self.assertTrue(self.button(at, "Connect to iCloud").disabled)
         self.assertEqual(storage.Store().get("language"), "English")
 
+    def theme_scripts(self, at):
+        return [e.proto.body for e in at.get("html") if "stActiveTheme" in e.proto.body]
+
     def test_theme_toggle_persists(self):
+        # Light (or unknown) active theme: toggle off; switching on stores the
+        # browser's theme choice ("Dark") and reloads the page.
         at = self.app()
         self.assertFalse(at.toggle(key="dark_theme").value)
+        self.assertEqual(self.theme_scripts(at), [])
         at.toggle(key="dark_theme").set_value(True).run()
         self.assertFalse(at.exception)
-        self.assertTrue(at.toggle(key="dark_theme").value)
-        self.assertEqual(storage.Store().get("theme_mode"), "dark")
+        [script] = self.theme_scripts(at)
+        self.assertIn('"stActiveTheme-" + window.location.pathname + "-v2"', script)
+        self.assertIn('JSON.stringify("Dark")', script)
+        self.assertIn("window.location.reload()", script)
+        self.assertIsNone(storage.Store().get("theme_mode"))
+
+    def test_theme_toggle_follows_active_dark_theme(self):
+        dark = PropertyMock(return_value=StreamlitTheme({"type": "dark"}))
+        with patch.object(ContextProxy, "theme", new_callable=lambda: dark):
+            at = self.app()
+            self.assertTrue(at.toggle(key="dark_theme").value)
+            at.toggle(key="dark_theme").set_value(False).run()
+            self.assertFalse(at.exception)
+            [script] = self.theme_scripts(at)
+            self.assertIn('JSON.stringify("Light")', script)
+            # Once the switch is sent, later reruns track the active theme again.
+            at.run()
+            self.assertTrue(at.toggle(key="dark_theme").value)
+            self.assertEqual(self.theme_scripts(at), [])
 
     def test_font_size_setting_persists(self):
         at = self.app()
