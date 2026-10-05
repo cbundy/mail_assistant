@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.3.8-test"
+VERSION = "3.3.9-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
