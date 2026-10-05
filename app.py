@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import pandas as pd
 import streamlit as st
 from storage import Store
+from session_store import COOKIE, SessionStore
 import mail_service as service
 
 st.set_page_config(
@@ -594,16 +595,52 @@ def sidebar():
         if st.button(
             T("Выйти", "Sign out"), key="signout", width="stretch", disabled=busy
         ):
+            sessions.revoke(ss.get("session_token"))
             lang = ss.language
             for key in list(ss):
                 del ss[key]
             ss.language = lang
+            ss.forget_cookie = True
             st.rerun()
         st.caption(f"v{VERSION}")
 
 
+@st.cache_resource
+def signed_in_sessions():
+    # One store per server process; see session_store.py for the security model.
+    return SessionStore()
+
+
+def write_cookie(token):
+    # Streamlit cannot set cookies from Python, so the page sets it. A session
+    # cookie (no Expires/Max-Age); an empty token deletes it.
+    value = f"{COOKIE}={token}; Path=/; SameSite=Strict" + ("" if token else "; Max-Age=0")
+    st.html(
+        f"<script>document.cookie = {json.dumps(value)}"
+        " + (location.protocol === 'https:' ? '; Secure' : '');</script>",
+        unsafe_allow_javascript=True,
+    )
+
+
+# Restore a sign-in after a browser refresh. st.context.cookies holds the
+# cookies sent when this browser session connected.
+sessions = signed_in_sessions()
+cookie_token = st.context.cookies.get(COOKIE)
+if ss.get("session_token"):
+    sessions.lookup(ss.session_token)  # restart the idle timer
+elif cookie_token and not ss.get("account") and not ss.get("job"):
+    restored = sessions.lookup(cookie_token)
+    if restored:
+        ss.account, ss.password = restored
+        ss.session_token = cookie_token
+    else:
+        ss.forget_cookie = True
+
 if ss.get("account"):
     sidebar()
+    if ss.get("session_token") and cookie_token != ss.session_token:
+        with st.sidebar:  # keeps the empty script element out of the page layout
+            write_cookie(ss.session_token)
 if ss.get("job"):
     job = ss.job
     if not job.done:
@@ -655,6 +692,7 @@ if ss.get("job"):
     elif job.kind == "login":
         ss.account = job.result
         ss.password = ss.pop("pending_password", "")
+        ss.session_token = sessions.create(ss.account, ss.password)
         ss.pop("password_input", None)
         st.rerun()
     elif job.kind == "prepare":
@@ -729,8 +767,8 @@ if not ss.get("account"):
         )
         st.caption(
             T(
-                "Пароль используется только в памяти текущей сессии и не записывается на диск. История и заголовки писем хранятся локально.",
-                "Your password stays in session memory and is never written to disk. History and message headers are stored locally.",
+                "Пароль хранится только в памяти приложения до выхода или перезапуска и не записывается на диск. История и заголовки писем хранятся локально.",
+                "Your password stays in app memory until you sign out or the app restarts, and is never written to disk. History and message headers are stored locally.",
             )
         )
 
@@ -766,6 +804,8 @@ if not ss.get("account"):
                     "Changes text size throughout the interface.",
                 ),
             )
+    if ss.get("forget_cookie"):
+        write_cookie("")
     st.stop()
 
 store = Store(ss.account)
