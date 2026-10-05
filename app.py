@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.3.9-test"
+VERSION = "3.3.10-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -385,12 +385,12 @@ textarea::placeholder {{
 .st-key-theme_toggle_area [data-testid="stCheckbox"] label > div:first-of-type {{
   box-sizing: border-box !important;
   position: relative !important;
-  flex: 0 0 72px !important;
-  width: 72px !important;
-  height: 40px !important;
-  min-width: 72px !important;
+  flex: 0 0 36px !important;
+  width: 36px !important;
+  height: 20px !important;
+  min-width: 36px !important;
   margin: 0 !important;
-  padding: 4px !important;
+  padding: 2px !important;
   border: 0 !important;
   border-radius: 999px !important;
   display: flex !important;
@@ -400,9 +400,9 @@ textarea::placeholder {{
 }}
 .st-key-theme_toggle_area [data-testid="stCheckbox"] label > div:first-of-type > div {{
   box-sizing: border-box !important;
-  flex: 0 0 32px !important;
-  width: 32px !important;
-  height: 32px !important;
+  flex: 0 0 16px !important;
+  width: 16px !important;
+  height: 16px !important;
   margin: 0 !important;
   border-radius: 50% !important;
   background: #FFFFFF !important;
@@ -413,7 +413,7 @@ textarea::placeholder {{
   background: var(--primary) !important;
 }}
 .st-key-theme_toggle_area [data-testid="stCheckbox"] label:has(input:checked) > div:first-of-type > div {{
-  transform: translateX(32px) !important;
+  transform: translateX(16px) !important;
 }}
 .st-key-theme_toggle_area [data-testid="stWidgetLabel"] {{
   display: flex !important;
