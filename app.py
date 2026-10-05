@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.1.6-test"
+VERSION = "3.1.7-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -268,7 +268,7 @@ def execute_pending_request(store):
 
 
 st.title("📬 iCloud Mail Assistant")
-st.warning("TEST BUILD 3.1.6 · fix/icloud-delete")
+st.warning("TEST BUILD 3.1.7 · fix/icloud-delete")
 pages = {
     "mail": ("Почта", "Mail"),
     "white": ("Белый список", "Whitelist"),
@@ -277,11 +277,6 @@ pages = {
     "history": ("История", "History"),
     "settings": ("Настройки", "Settings"),
 }
-
-
-def mark_preview_stale():
-    if ss.get("preview"):
-        ss.preview_stale = True
 
 
 def navigate(page):
@@ -375,7 +370,6 @@ if ss.get("job"):
     elif job.kind == "prepare":
         ss.preview = job.result
         ss.preview_id = uuid.uuid4().hex
-        ss.preview_stale = False
     elif job.kind == "read":
         ss.message_content = job.result
     else:
@@ -764,7 +758,6 @@ else:
         if buttons[0].button(T("Выбрать всё", "Select all")):
             for g in visible:
                 ss[select_key(g)] = not g["protected"]
-            mark_preview_stale()
         if buttons[1].button(T("Снять всё", "Deselect all")):
             for g in groups:
                 ss[select_key(g)] = False
@@ -796,7 +789,6 @@ else:
                     g["name"] + (" 🔒" if g["protected"] else ""),
                     key=select_key(g),
                     help=T(*STATUS[g["status"]]) + " · " + ", ".join(g["senders"]),
-                    on_change=mark_preview_stale,
                 )
                 if checked:
                     chosen.add(g["key"])
@@ -847,7 +839,7 @@ else:
                 index=list(modes).index(store.get("mode", "delete_only")),
                 format_func=lambda k: T(*modes[k]),
                 horizontal=True,
-                on_change=mark_preview_stale,
+                key="action_mode",
             )
             store.set("mode", mode)
             scope = "promo"
@@ -865,7 +857,7 @@ else:
                         )
                     ),
                     horizontal=True,
-                    on_change=mark_preview_stale,
+                    key="delete_scope",
                 )
             store.set("scope", scope)
             allow_white = False
@@ -883,7 +875,6 @@ else:
                         "I explicitly allow this action for selected whitelisted companies",
                     ),
                     key=consent_key,
-                    on_change=mark_preview_stale,
                 )
             keys = sorted(g["key"] for g in selected)
             ss.chosen_companies = keys
@@ -906,28 +897,21 @@ else:
                 )
             preview = ss.get("preview")
             if preview:
-                preview_stale = bool(ss.get("preview_stale", False))
-                if preview_stale:
-                    st.warning(
-                        T(
-                            "Выбор компаний или режим изменён после подготовки. Предпросмотр сохранён, но перед выполнением нажми «Просмотреть и подтвердить →» ещё раз.",
-                            "Companies or action settings changed after preparation. The preview is preserved, but review it again before executing.",
-                        )
-                    )
+                preview_mode = preview["mode"]
                 st.subheader(
                     T("Предпросмотр и подтверждение", "Preview and confirmation")
                 )
                 with st.expander(T("Выбранные компании", "Selected companies")):
                     st.write(", ".join(preview["companies"]))
                 targets = preview["targets"]
-                if mode != "unsubscribe_only" and not targets:
+                if preview_mode != "unsubscribe_only" and not targets:
                     st.warning(
                         T(
                             "Писем для удаления нет. Фильтр «Только вероятная реклама» мог исключить их — выбери «Все письма выбранных компаний» и снова нажми «Просмотреть и подтвердить». Если и там пусто, письма уже не во Входящих.",
                             "No deletion candidates. The advertising filter may have excluded them: choose ‘All emails from selected companies’ and review again. If still empty, the messages are no longer in the inbox.",
                         )
                     )
-                elif mode != "unsubscribe_only" and preview.get("excluded"):
+                elif preview_mode != "unsubscribe_only" and preview.get("excluded"):
                     st.caption(
                         T(
                             f"Фильтр рекламы исключил писем: {preview['excluded']}.",
@@ -1016,13 +1000,13 @@ else:
                         set(preview["senders"])
                         - {m["sender"] for m in preview["unsubs"]}
                     )
-                    if mode != "delete_only"
+                    if preview_mode != "delete_only"
                     else 0
                 )
                 st.write(
                     T(
-                        f"Компаний: {len(keys)} · в Корзину: {len(selected_uids)} · автоотписок: до {auto} · ручных: {manual} · без способа отписки: {no_method}",
-                        f"Companies: {len(keys)} · to Trash: {len(selected_uids)} · automatic requests: up to {auto} · manual: {manual} · no unsubscribe method: {no_method}",
+                        f"Компаний: {len(preview['keys'])} · в Корзину: {len(selected_uids)} · автоотписок: до {auto} · ручных: {manual} · без способа отписки: {no_method}",
+                        f"Companies: {len(preview['keys'])} · to Trash: {len(selected_uids)} · automatic requests: up to {auto} · manual: {manual} · no unsubscribe method: {no_method}",
                     )
                 )
                 st.caption(
@@ -1036,10 +1020,10 @@ else:
                         f"Переместить в Корзину: {len(selected_uids)} писем",
                         f"Move {len(selected_uids)} emails to Trash",
                     )
-                    if mode == "delete_only"
+                    if preview_mode == "delete_only"
                     else (
                         T("Подтвердить отписку", "Confirm unsubscribe")
-                        if mode == "unsubscribe_only"
+                        if preview_mode == "unsubscribe_only"
                         else T(
                             f"Отписаться и переместить в Корзину: {len(selected_uids)} писем",
                             f"Unsubscribe and move {len(selected_uids)} emails to Trash",
@@ -1059,8 +1043,7 @@ else:
                     label,
                     key="execute_action",
                     type="primary",
-                    disabled=preview_stale
-                    or (not selected_uids and not preview["unsubs"]),
+                    disabled=not selected_uids and not preview["unsubs"],
                     on_click=queue_execute,
                 )
 
