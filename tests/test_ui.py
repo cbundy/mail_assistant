@@ -93,14 +93,12 @@ class UITests(unittest.TestCase):
             self.assertTrue(at.button(key="execute_action").disabled)
             self.button(at, "Отметить все письма").click().run()
             at.button(key="execute_action").click().run()
-            job = at.session_state["job"]
-            if job:
-                job.thread.join(5)
-            at.run()
             self.assertFalse(at.exception)
-            self.assertEqual(len([x for x in fake.calls if x[0] == "MOVE"]), 2)
+            self.assertIsNone(at.session_state.get("job"))
+            self.assertEqual(len([x for x in fake.calls if x[0] == "COPY"]), 2)
+            self.assertEqual(len([x for x in fake.calls if x[0] == "EXPUNGE"]), 2)
             at.run()
-            self.assertEqual(len([x for x in fake.calls if x[0] == "MOVE"]), 2)
+            self.assertEqual(len([x for x in fake.calls if x[0] == "COPY"]), 2)
             self.assertIsNone(at.session_state["preview"])
             self.assertTrue(any("удалено 2" in x.value for x in at.info))
 
