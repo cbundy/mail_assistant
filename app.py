@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.1.5-test"
+VERSION = "3.1.6-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -268,7 +268,7 @@ def execute_pending_request(store):
 
 
 st.title("📬 iCloud Mail Assistant")
-st.warning("TEST BUILD 3.1.5 · fix/icloud-delete")
+st.warning("TEST BUILD 3.1.6 · fix/icloud-delete")
 pages = {
     "mail": ("Почта", "Mail"),
     "white": ("Белый список", "Whitelist"),
@@ -277,6 +277,11 @@ pages = {
     "history": ("История", "History"),
     "settings": ("Настройки", "Settings"),
 }
+
+
+def mark_preview_stale():
+    if ss.get("preview"):
+        ss.preview_stale = True
 
 
 def navigate(page):
@@ -370,6 +375,7 @@ if ss.get("job"):
     elif job.kind == "prepare":
         ss.preview = job.result
         ss.preview_id = uuid.uuid4().hex
+        ss.preview_stale = False
     elif job.kind == "read":
         ss.message_content = job.result
     else:
@@ -758,16 +764,16 @@ else:
         if buttons[0].button(T("Выбрать всё", "Select all")):
             for g in visible:
                 ss[select_key(g)] = not g["protected"]
-            ss.preview = None
+            mark_preview_stale()
         if buttons[1].button(T("Снять всё", "Deselect all")):
             for g in groups:
                 ss[select_key(g)] = False
             ss.chosen_companies = []
-            ss.preview = None
+            mark_preview_stale()
         if buttons[2].button(T("Выбрать чёрный список", "Select blacklist")):
             for g in visible:
                 ss[select_key(g)] = g["black"] and not g["protected"]
-            ss.preview = None
+            mark_preview_stale()
         # Widget-independent selection survives search, dialogs and worker reruns.
         chosen = set(ss.get("chosen_companies", []))
         with st.container(height=390, key="company_list", border=True):
@@ -790,6 +796,7 @@ else:
                     g["name"] + (" 🔒" if g["protected"] else ""),
                     key=select_key(g),
                     help=T(*STATUS[g["status"]]) + " · " + ", ".join(g["senders"]),
+                    on_change=mark_preview_stale,
                 )
                 if checked:
                     chosen.add(g["key"])
@@ -840,6 +847,7 @@ else:
                 index=list(modes).index(store.get("mode", "delete_only")),
                 format_func=lambda k: T(*modes[k]),
                 horizontal=True,
+                on_change=mark_preview_stale,
             )
             store.set("mode", mode)
             scope = "promo"
@@ -857,6 +865,7 @@ else:
                         )
                     ),
                     horizontal=True,
+                    on_change=mark_preview_stale,
                 )
             store.set("scope", scope)
             allow_white = False
@@ -874,6 +883,7 @@ else:
                         "I explicitly allow this action for selected whitelisted companies",
                     ),
                     key=consent_key,
+                    on_change=mark_preview_stale,
                 )
             keys = sorted(g["key"] for g in selected)
             ss.chosen_companies = keys
@@ -895,20 +905,15 @@ else:
                     allow_white,
                 )
             preview = ss.get("preview")
-            if preview and (
-                preview["keys"],
-                preview["mode"],
-                preview["scope"],
-                preview["allow_white"],
-            ) != (keys, mode, scope, allow_white):
-                ss.preview = None
-                preview = None
-            if preview and (
-                preview["keys"],
-                preview["mode"],
-                preview["scope"],
-                preview["allow_white"],
-            ) == (keys, mode, scope, allow_white):
+            if preview:
+                preview_stale = bool(ss.get("preview_stale", False))
+                if preview_stale:
+                    st.warning(
+                        T(
+                            "Выбор компаний или режим изменён после подготовки. Предпросмотр сохранён, но перед выполнением нажми «Просмотреть и подтвердить →» ещё раз.",
+                            "Companies or action settings changed after preparation. The preview is preserved, but review it again before executing.",
+                        )
+                    )
                 st.subheader(
                     T("Предпросмотр и подтверждение", "Preview and confirmation")
                 )
@@ -1054,7 +1059,8 @@ else:
                     label,
                     key="execute_action",
                     type="primary",
-                    disabled=not selected_uids and not preview["unsubs"],
+                    disabled=preview_stale
+                    or (not selected_uids and not preview["unsubs"]),
                     on_click=queue_execute,
                 )
 
