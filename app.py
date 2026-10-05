@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.1.4-test"
+VERSION = "3.1.5-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -163,7 +163,6 @@ def start(kind, fn, *args):
     elif ss.get("preview"):
         prefix = "message_" + ss.preview_id
         ss[prefix + "_restore"] = ss.get(prefix + "_selection", [])
-        ss[prefix + "_revision"] = ss.get(prefix + "_revision", 0) + 1
     ss.result = None
     ss.pop("last_error", None)
     ss.pop("last_error_detail", None)
@@ -269,7 +268,7 @@ def execute_pending_request(store):
 
 
 st.title("📬 iCloud Mail Assistant")
-st.warning("TEST BUILD 3.1.4 · fix/icloud-delete")
+st.warning("TEST BUILD 3.1.5 · fix/icloud-delete")
 pages = {
     "mail": ("Почта", "Mail"),
     "white": ("Белый список", "Whitelist"),
@@ -933,60 +932,74 @@ else:
                 prefix = "message_" + ss.preview_id
                 selected_uids = []
                 if targets:
+                    # Each message owns one stable checkbox state.  Do not use a
+                    # data_editor here: rebuilding its DataFrame on every rerun can
+                    # discard the editor delta and collapse the surrounding preview.
+                    def message_key(uid):
+                        return f"{prefix}_uid_{uid}"
+
+                    # Initialise only once for this preview.  A restored selection
+                    # (e.g. after opening a message reader) wins over the default.
+                    restore = ss.get(prefix + "_restore")
+                    default_selected = ss.get(prefix + "_default", True)
+                    for m in targets:
+                        key = message_key(m["uid"])
+                        if key not in ss:
+                            ss[key] = (
+                                m["uid"] in restore
+                                if restore is not None
+                                else default_selected
+                            )
+
                     a, b = st.columns(2)
-                    if a.button(T("Отметить все письма", "Select all messages")):
+                    if a.button(
+                        T("Отметить все письма", "Select all messages"),
+                        key=prefix + "_select_all",
+                    ):
+                        for m in targets:
+                            ss[message_key(m["uid"])] = True
                         ss.pop(prefix + "_restore", None)
-                        ss[prefix + "_default"] = True
-                        ss[prefix + "_revision"] = ss.get(prefix + "_revision", 0) + 1
-                    if b.button(T("Снять все отметки писем", "Deselect all messages")):
+                        st.rerun()
+                    if b.button(
+                        T("Снять все отметки писем", "Deselect all messages"),
+                        key=prefix + "_deselect_all",
+                    ):
+                        for m in targets:
+                            ss[message_key(m["uid"])] = False
                         ss.pop(prefix + "_restore", None)
-                        ss[prefix + "_default"] = False
-                        ss[prefix + "_revision"] = ss.get(prefix + "_revision", 0) + 1
-                    table = pd.DataFrame(
-                        [
-                            {
-                                "selected": (
-                                    m["uid"] in ss[prefix + "_restore"]
-                                    if prefix + "_restore" in ss
-                                    else ss.get(prefix + "_default", True)
-                                ),
-                                "sender": m["sender"],
-                                "date": m["date"],
-                                "subject": m["subject"],
-                                "kind": (
-                                    T("реклама", "advertising")
-                                    if m["kind"] == "promo"
-                                    else (
-                                        T("важное", "important")
-                                        if m["kind"] == "important"
-                                        else T("другое", "other")
-                                    )
-                                ),
-                                "uid": m["uid"],
-                            }
-                            for m in targets
-                        ]
-                    )
-                    edited = st.data_editor(
-                        table,
-                        hide_index=True,
-                        width="stretch",
-                        height=280,
-                        disabled=["sender", "date", "subject", "kind", "uid"],
-                        column_config={
-                            "selected": st.column_config.CheckboxColumn(
-                                T("Удалить", "Delete")
-                            ),
-                            "sender": T("Отправитель", "Sender"),
-                            "date": T("Дата", "Date"),
-                            "subject": T("Тема", "Subject"),
-                            "kind": T("Тип", "Type"),
-                            "uid": None,
-                        },
-                        key=prefix + str(ss.get(prefix + "_revision", 0)),
-                    )
-                    selected_uids = edited.loc[edited.selected, "uid"].tolist()
-                    ss[prefix + "_selection"] = selected_uids
+                        st.rerun()
+
+                    with st.container(height=300, border=True):
+                        heads = st.columns([0.8, 2.3, 2.2, 4.7])
+                        heads[0].caption(T("Удалить", "Delete"))
+                        heads[1].caption(T("Дата", "Date"))
+                        heads[2].caption(T("Отправитель", "Sender"))
+                        heads[3].caption(T("Тема", "Subject"))
+
+                        for m in targets:
+                            row = st.columns([0.8, 2.3, 2.2, 4.7])
+                            checked = row[0].checkbox(
+                                T("Удалить", "Delete"),
+                                key=message_key(m["uid"]),
+                                label_visibility="collapsed",
+                            )
+                            row[1].write(m["date"] or "—")
+                            row[2].write(m["sender"])
+                            subject = m["subject"] or T("Без темы", "No subject")
+                            kind = (
+                                T("реклама", "advertising")
+                                if m["kind"] == "promo"
+                                else (
+                                    T("важное", "important")
+                                    if m["kind"] == "important"
+                                    else T("другое", "other")
+                                )
+                            )
+                            row[3].write(f"{subject} · {kind}")
+                            if checked:
+                                selected_uids.append(m["uid"])
+
+                    ss[prefix + "_selection"] = list(selected_uids)
                 auto = sum(
                     bool(m["one_click"])
                     and any(urlparse(u).scheme == "https" for u in m["urls"])
