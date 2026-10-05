@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.3.7-test"
+VERSION = "3.3.8-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -353,54 +353,87 @@ textarea::placeholder {{
   padding-bottom: 2.2rem;
   max-width: 1180px;
 }}
+/* One native, accessible toggle: label and track share the same flex row.
+   Streamlit renders st.toggle as stCheckbox, not stToggle. */
 .st-key-theme_toggle_area {{
   padding-top: 2.35rem;
   padding-right: 0;
 }}
-.st-key-theme_toggle_area [data-testid="stHorizontalBlock"] {{
-  align-items: center !important;
+.st-key-theme_toggle_area .st-key-dark_theme {{
+  width: 100% !important;
+}}
+.st-key-theme_toggle_area [data-testid="stCheckbox"] {{
+  display: flex !important;
   justify-content: flex-end !important;
-  gap: .15rem !important;
+  width: 100% !important;
+  min-height: 48px;
+  margin: 0 !important;
+  padding: 0 !important;
 }}
-.st-key-theme_toggle_text {{
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  min-height: 46px;
+.st-key-theme_toggle_area [data-testid="stCheckbox"] label {{
+  display: flex !important;
+  flex-direction: row-reverse !important;
+  align-items: center !important;
+  gap: 14px !important;
+  min-height: 48px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  cursor: pointer;
 }}
-.st-key-theme_toggle_text .theme-label {{
-  color: var(--text);
-  font-size: {ss.font_size}px;
+/* first-of-type skips the visually hidden input/span in both BaseWeb
+   and React Aria implementations. Real dimensions reserve layout space. */
+.st-key-theme_toggle_area [data-testid="stCheckbox"] label > div:first-of-type {{
+  box-sizing: border-box !important;
+  position: relative !important;
+  flex: 0 0 72px !important;
+  width: 72px !important;
+  height: 40px !important;
+  min-width: 72px !important;
+  margin: 0 !important;
+  padding: 4px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  display: flex !important;
+  align-items: center !important;
+  transform: none !important;
+  background: var(--border) !important;
+}}
+.st-key-theme_toggle_area [data-testid="stCheckbox"] label > div:first-of-type > div {{
+  box-sizing: border-box !important;
+  flex: 0 0 32px !important;
+  width: 32px !important;
+  height: 32px !important;
+  margin: 0 !important;
+  border-radius: 50% !important;
+  background: #FFFFFF !important;
+  transform: translateX(0) !important;
+  transition: transform 150ms ease !important;
+}}
+.st-key-theme_toggle_area [data-testid="stCheckbox"] label:has(input:checked) > div:first-of-type {{
+  background: var(--primary) !important;
+}}
+.st-key-theme_toggle_area [data-testid="stCheckbox"] label:has(input:checked) > div:first-of-type > div {{
+  transform: translateX(32px) !important;
+}}
+.st-key-theme_toggle_area [data-testid="stWidgetLabel"] {{
+  display: flex !important;
+  align-items: center !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1.25 !important;
+}}
+.st-key-theme_toggle_area [data-testid="stWidgetLabel"] p {{
+  color: var(--text) !important;
+  font-size: {ss.font_size}px !important;
   font-weight: 550;
   white-space: nowrap;
-  line-height: 1;
-  margin: 0;
-  padding: 0;
-}}
-.st-key-theme_toggle_switch {{
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  min-height: 46px;
-  padding-right: .15rem;
-}}
-.st-key-theme_toggle_switch [data-testid="stToggle"] {{
+  line-height: 1.25 !important;
   margin: 0 !important;
   padding: 0 !important;
-  width: auto !important;
-  display: flex !important;
-  align-items: center !important;
 }}
-.st-key-theme_toggle_switch [data-testid="stToggle"] label {{
-  margin: 0 !important;
-  padding: 0 !important;
-  min-height: 46px !important;
-  display: flex !important;
-  align-items: center !important;
-}}
-.st-key-theme_toggle_switch [data-testid="stToggle"] label > div:first-child {{
-  transform: scale(1.8);
-  transform-origin: center center;
+.st-key-theme_toggle_area label:has(input:focus-visible) > div:first-of-type {{
+  outline: 3px solid var(--primary-hover);
+  outline-offset: 4px;
 }}
 .st-key-login_screen {{
   padding-top: 1.2rem;
@@ -590,25 +623,11 @@ with header_left:
     )
 with header_right:
     with st.container(key="theme_toggle_area"):
-        theme_text, theme_switch = st.columns(
-            [1.2, 0.38],
-            gap="small",
-            vertical_alignment="center",
+        st.toggle(
+            T("Тёмная тема", "Dark theme"),
+            key="dark_theme",
+            on_change=save_theme,
         )
-        with theme_text:
-            with st.container(key="theme_toggle_text"):
-                st.markdown(
-                    f'<div class="theme-label">{T("Тёмная тема", "Dark theme")}</div>',
-                    unsafe_allow_html=True,
-                )
-        with theme_switch:
-            with st.container(key="theme_toggle_switch"):
-                st.toggle(
-                    T("Тёмная тема", "Dark theme"),
-                    key="dark_theme",
-                    on_change=save_theme,
-                    label_visibility="collapsed",
-                )
 pages = {
     "mail": ("Почта", "Mail"),
     "white": ("Белый список", "Whitelist"),
