@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.3.5-test"
+VERSION = "3.3.6-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -354,27 +354,37 @@ textarea::placeholder {{
   max-width: 1180px;
 }}
 .st-key-theme_toggle_area {{
-  padding-top: 2.2rem;
-  padding-right: .2rem;
-}}
-.st-key-theme_toggle_area [data-testid="stHorizontalBlock"] {{
-  align-items: center !important;
-  justify-content: flex-end !important;
-  gap: .18rem !important;
+  padding-top: 2.45rem;
+  padding-right: .35rem;
+  display: flex;
+  justify-content: flex-end;
 }}
 .st-key-theme_toggle_area [data-testid="stToggle"] {{
   margin: 0 !important;
   padding: 0 !important;
-  transform: scale(1.35);
-  transform-origin: left center;
+  width: auto !important;
 }}
-.st-key-theme_toggle_area .theme-label {{
-  color: var(--text);
-  font-size: {ss.font_size}px;
-  font-weight: 550;
-  white-space: nowrap;
-  line-height: 1;
-  text-align: right;
+.st-key-theme_toggle_area [data-testid="stToggle"] label {{
+  display: flex !important;
+  flex-direction: row-reverse !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: .9rem !important;
+  min-height: 42px !important;
+  white-space: nowrap !important;
+}}
+.st-key-theme_toggle_area [data-testid="stToggle"] label p {{
+  margin: 0 !important;
+  padding: 0 !important;
+  color: var(--text) !important;
+  font-size: {ss.font_size}px !important;
+  font-weight: 550 !important;
+  line-height: 1 !important;
+}}
+.st-key-theme_toggle_area [data-testid="stToggle"] label > div:first-child {{
+  transform: scale(1.6);
+  transform-origin: center center;
+  margin-right: .3rem !important;
 }}
 .st-key-login_screen {{
   padding-top: 1.2rem;
@@ -564,23 +574,11 @@ with header_left:
     )
 with header_right:
     with st.container(key="theme_toggle_area"):
-        theme_text, theme_switch = st.columns(
-            [1.0, 0.34],
-            gap="small",
-            vertical_alignment="center",
+        st.toggle(
+            T("Тёмная тема", "Dark theme"),
+            key="dark_theme",
+            on_change=save_theme,
         )
-        with theme_text:
-            st.markdown(
-                f'<div class="theme-label">{T("Тёмная тема", "Dark theme")}</div>',
-                unsafe_allow_html=True,
-            )
-        with theme_switch:
-            st.toggle(
-                T("Тёмная тема", "Dark theme"),
-                key="dark_theme",
-                on_change=save_theme,
-                label_visibility="collapsed",
-            )
 pages = {
     "mail": ("Почта", "Mail"),
     "white": ("Белый список", "Whitelist"),
