@@ -95,10 +95,9 @@ class UITests(unittest.TestCase):
             at.button(key="execute_action").click().run()
             self.assertFalse(at.exception)
             self.assertIsNone(at.session_state.get("job"))
-            self.assertEqual(len([x for x in fake.calls if x[0] == "COPY"]), 2)
-            self.assertEqual(len([x for x in fake.calls if x[0] == "EXPUNGE"]), 2)
+            self.assertEqual(len([x for x in fake.calls if x[0] == "MOVE"]), 2)
             at.run()
-            self.assertEqual(len([x for x in fake.calls if x[0] == "COPY"]), 2)
+            self.assertEqual(len([x for x in fake.calls if x[0] == "MOVE"]), 2)
             self.assertIsNone(at.session_state["preview"])
             self.assertTrue(any("удалено 2" in x.value for x in at.info))
 
