@@ -10,13 +10,21 @@ import mail_service as svc
 from storage import Store
 
 
-def msg(uid="10", sender="news@auchan.pl", name="Auchan", kind="promo", received=100):
+def msg(
+    uid="10",
+    sender="news@auchan.pl",
+    name="Auchan",
+    kind="promo",
+    received=100,
+    unread=True,
+):
     return dict(
         uid=uid,
         sender=sender,
         name=name,
         kind=kind,
         received=received,
+        unread=unread,
         subject="Sale",
         date="",
         message_id="<" + uid + "@test>",
@@ -72,7 +80,11 @@ class FakeIMAP:
             chosen = [m for m in self.messages if m["uid"] in args[0].split(",")]
             return "OK", [
                 (
-                    f'1 (UID {m["uid"]} INTERNALDATE "05-Oct-2026 10:20:30 +0000"'.encode(),
+                    (
+                        f'1 (UID {m["uid"]} FLAGS '
+                        + ('()' if m.get("unread", True) else r'(\\Seen)')
+                        + ' INTERNALDATE "05-Oct-2026 10:20:30 +0000"'
+                    ).encode(),
                     f'From: {m["name"]} <{m["sender"]}>\r\nSubject: {m["subject"]}\r\nMessage-ID: {m["message_id"]}\r\nList-Unsubscribe: <https://example.com/unsub>\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n\r\n'.encode(),
                 )
                 for m in chosen
@@ -259,9 +271,43 @@ class MailTests(unittest.TestCase):
                 "delete_only",
                 "all",
                 False,
+                "all",
                 lambda *a: None,
             )
         self.assertEqual([m["uid"] for m in p["targets"]], ["10"])
+
+    def test_fetch_tracks_seen_flag(self):
+        fake = FakeIMAP([msg("10", unread=True), msg("11", unread=False)])
+        items = svc.fetch(fake, ["10", "11"])
+        by_uid = {m["uid"]: m for m in items}
+        self.assertTrue(by_uid["10"]["unread"])
+        self.assertFalse(by_uid["11"]["unread"])
+
+    def test_prepare_filters_by_read_state(self):
+        fake = FakeIMAP(
+            [
+                msg("10", unread=True),
+                msg("11", unread=False),
+            ]
+        )
+        self.store.save_scan(
+            "123",
+            2,
+            [msg("10", unread=True), msg("11", unread=False)],
+        )
+        with self.ctx(fake):
+            p = svc.prepare(
+                self.store,
+                "pass",
+                ["auchan"],
+                "delete_only",
+                "all",
+                False,
+                "unread",
+                lambda *a: None,
+            )
+        self.assertEqual([m["uid"] for m in p["targets"]], ["10"])
+        self.assertEqual(p["read_filter"], "unread")
 
     def test_unchecked_message_never_moved(self):
         fake = FakeIMAP([msg(), msg("11")])
