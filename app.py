@@ -328,25 +328,55 @@ textarea::placeholder {{
 [data-testid="stSidebar"] [data-testid="stButton"] button {{
   justify-content: flex-start;
 }}
+.st-key-company_table [data-testid="stVerticalBlockBorderWrapper"] > div {{
+  border-color: var(--border) !important;
+}}
+.st-key-company_table .st-key-company_search {{
+  margin-bottom: .1rem !important;
+}}
 .st-key-company_list [data-testid="stButton"] button {{
-  min-height: 30px;
+  min-height: 28px;
 }}
 .st-key-company_list [data-testid="stHorizontalBlock"] {{
   align-items: center;
 }}
 .st-key-company_list p {{ margin-bottom: 0; }}
+.company-col-head {{
+  color: var(--muted);
+  line-height: 1.15;
+  padding: 0 .05rem .15rem;
+}}
+.company-col-head.center,
+.company-cell.center {{
+  text-align: center;
+}}
+.company-cell {{
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  line-height: 1.15;
+}}
+.company-cell.center {{
+  justify-content: center;
+}}
 [class*="st-key-company_row_"] [data-testid="stVerticalBlockBorderWrapper"] > div {{
   background: var(--surface-2) !important;
-  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent) !important;
-  border-radius: 12px !important;
-  padding: .42rem .65rem !important;
-  margin-bottom: .42rem !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  padding: .18rem .5rem !important;
+  margin-bottom: .24rem !important;
+}}
+[class*="st-key-company_row_"] [data-testid="stCheckbox"] {{
+  min-height: 28px !important;
 }}
 [class*="st-key-company_row_"] [data-testid="stCheckbox"] label {{
   font-weight: 600 !important;
+  min-height: 28px !important;
 }}
 [class*="st-key-company_row_"] [data-testid="stButton"] button {{
-  min-height: 34px !important;
+  min-height: 30px !important;
+  padding-top: .15rem !important;
+  padding-bottom: .15rem !important;
 }}
 [data-testid="stMainBlockContainer"] {{
   padding-top: 1.45rem;
@@ -1224,19 +1254,24 @@ else:
                     ss[select_key(g)] = g["black"] and not g["protected"]
 
             chosen = set(ss.get("chosen_companies", []))
-            st.divider()
-            heads = st.columns([4, 1, 1, 2, 1.35])
-            for col, label in zip(
-                heads,
-                [
-                    T("Компания", "Company"),
-                    T("Писем", "Emails"),
-                    T("Непроч.", "Unread"),
-                    T("Последнее", "Latest"),
-                    T("Просмотр", "Preview"),
-                ],
+            heads = st.columns([4, 1, 1, 2, 1.35], vertical_alignment="center")
+            for index, (col, label) in enumerate(
+                zip(
+                    heads,
+                    [
+                        T("Компания", "Company"),
+                        T("Писем", "Emails"),
+                        T("Непроч.", "Unread"),
+                        T("Последнее", "Latest"),
+                        T("Просмотр", "Preview"),
+                    ],
+                )
             ):
-                col.caption(label)
+                align_class = "" if index == 0 else " center"
+                col.markdown(
+                    f'<div class="company-col-head{align_class}">{label}</div>',
+                    unsafe_allow_html=True,
+                )
 
             with st.container(height=430, key="company_list", border=False):
                 for row_index, g in enumerate(visible):
@@ -1267,11 +1302,18 @@ else:
                             (m["received"] for m in shown_messages),
                             default=g["latest"],
                         )
-                        cols[1].markdown(f"**{len(shown_messages)}**")
-                        cols[2].markdown(
-                            f"**{unread_count}**" if unread_count else "0"
+                        cols[1].markdown(
+                            f'<div class="company-cell center"><strong>{len(shown_messages)}</strong></div>',
+                            unsafe_allow_html=True,
                         )
-                        cols[3].write(date(latest_shown).split(" ")[0])
+                        cols[2].markdown(
+                            f'<div class="company-cell center">{"<strong>" + str(unread_count) + "</strong>" if unread_count else "0"}</div>',
+                            unsafe_allow_html=True,
+                        )
+                        cols[3].markdown(
+                            f'<div class="company-cell center">{date(latest_shown).split(" ")[0]}</div>',
+                            unsafe_allow_html=True,
+                        )
                         if cols[4].button(
                             T("Письма", "Emails"),
                             key="view_" + g["key"],
