@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.sqlite3
+*.sqlite3-*
+mail_cache.json
+unsubscribe_log.json
+.env
+.streamlit/secrets.toml
