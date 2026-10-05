@@ -1372,8 +1372,8 @@ def show_company_messages(group):
         st.write(T(*STATUS[group["status"]]))
         st.caption(
             T(
-                f"Удалено за 30 дней: {group['recent']} · новых после отписки: {group['after']}. Счётчик ограничен сканированиями.",
-                f"Deleted in 30 days: {group['recent']} · new after unsubscribe: {group['after']}. Counts are limited to scans.",
+                f"Удалено за 3 дня: {group['recent']} · новых после отписки: {group['after']}. Счётчик ограничен сканированиями.",
+                f"Deleted in 3 days: {group['recent']} · new after unsubscribe: {group['after']}. Counts are limited to scans.",
             )
         )
     if messages:
