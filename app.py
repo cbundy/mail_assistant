@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.3.6-test"
+VERSION = "3.3.7-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -354,37 +354,53 @@ textarea::placeholder {{
   max-width: 1180px;
 }}
 .st-key-theme_toggle_area {{
-  padding-top: 2.45rem;
-  padding-right: .35rem;
-  display: flex;
-  justify-content: flex-end;
+  padding-top: 2.35rem;
+  padding-right: 0;
 }}
-.st-key-theme_toggle_area [data-testid="stToggle"] {{
+.st-key-theme_toggle_area [data-testid="stHorizontalBlock"] {{
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: .15rem !important;
+}}
+.st-key-theme_toggle_text {{
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 46px;
+}}
+.st-key-theme_toggle_text .theme-label {{
+  color: var(--text);
+  font-size: {ss.font_size}px;
+  font-weight: 550;
+  white-space: nowrap;
+  line-height: 1;
+  margin: 0;
+  padding: 0;
+}}
+.st-key-theme_toggle_switch {{
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 46px;
+  padding-right: .15rem;
+}}
+.st-key-theme_toggle_switch [data-testid="stToggle"] {{
   margin: 0 !important;
   padding: 0 !important;
   width: auto !important;
-}}
-.st-key-theme_toggle_area [data-testid="stToggle"] label {{
   display: flex !important;
-  flex-direction: row-reverse !important;
   align-items: center !important;
-  justify-content: flex-start !important;
-  gap: .9rem !important;
-  min-height: 42px !important;
-  white-space: nowrap !important;
 }}
-.st-key-theme_toggle_area [data-testid="stToggle"] label p {{
+.st-key-theme_toggle_switch [data-testid="stToggle"] label {{
   margin: 0 !important;
   padding: 0 !important;
-  color: var(--text) !important;
-  font-size: {ss.font_size}px !important;
-  font-weight: 550 !important;
-  line-height: 1 !important;
+  min-height: 46px !important;
+  display: flex !important;
+  align-items: center !important;
 }}
-.st-key-theme_toggle_area [data-testid="stToggle"] label > div:first-child {{
-  transform: scale(1.6);
+.st-key-theme_toggle_switch [data-testid="stToggle"] label > div:first-child {{
+  transform: scale(1.8);
   transform-origin: center center;
-  margin-right: .3rem !important;
 }}
 .st-key-login_screen {{
   padding-top: 1.2rem;
@@ -574,11 +590,25 @@ with header_left:
     )
 with header_right:
     with st.container(key="theme_toggle_area"):
-        st.toggle(
-            T("Тёмная тема", "Dark theme"),
-            key="dark_theme",
-            on_change=save_theme,
+        theme_text, theme_switch = st.columns(
+            [1.2, 0.38],
+            gap="small",
+            vertical_alignment="center",
         )
+        with theme_text:
+            with st.container(key="theme_toggle_text"):
+                st.markdown(
+                    f'<div class="theme-label">{T("Тёмная тема", "Dark theme")}</div>',
+                    unsafe_allow_html=True,
+                )
+        with theme_switch:
+            with st.container(key="theme_toggle_switch"):
+                st.toggle(
+                    T("Тёмная тема", "Dark theme"),
+                    key="dark_theme",
+                    on_change=save_theme,
+                    label_visibility="collapsed",
+                )
 pages = {
     "mail": ("Почта", "Mail"),
     "white": ("Белый список", "Whitelist"),
