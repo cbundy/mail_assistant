@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.3.3-test"
+VERSION = "3.3.4-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -354,13 +354,24 @@ textarea::placeholder {{
   max-width: 1180px;
 }}
 .st-key-theme_toggle_area {{
-  padding-top: .95rem;
-  padding-right: .35rem;
+  padding-top: .9rem;
+  padding-right: .25rem;
+}}
+.st-key-theme_toggle_area [data-testid="stHorizontalBlock"] {{
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: .55rem !important;
 }}
 .st-key-theme_toggle_area [data-testid="stToggle"] {{
-  display: flex;
-  justify-content: flex-end;
+  margin: 0 !important;
+  padding: 0 !important;
+}}
+.st-key-theme_toggle_area .theme-label {{
+  color: var(--text);
+  font-size: {ss.font_size}px;
+  font-weight: 500;
   white-space: nowrap;
+  line-height: 1;
 }}
 .st-key-login_screen {{
   padding-top: 1.2rem;
@@ -550,11 +561,22 @@ with header_left:
     )
 with header_right:
     with st.container(key="theme_toggle_area"):
-        st.toggle(
-            T("Тёмная тема", "Dark theme"),
-            key="dark_theme",
-            on_change=save_theme,
+        theme_text, theme_switch = st.columns(
+            [1.45, 0.55],
+            vertical_alignment="center",
         )
+        with theme_text:
+            st.markdown(
+                f'<div class="theme-label">{T("Тёмная тема", "Dark theme")}</div>',
+                unsafe_allow_html=True,
+            )
+        with theme_switch:
+            st.toggle(
+                T("Тёмная тема", "Dark theme"),
+                key="dark_theme",
+                on_change=save_theme,
+                label_visibility="collapsed",
+            )
 pages = {
     "mail": ("Почта", "Mail"),
     "white": ("Белый список", "Whitelist"),
