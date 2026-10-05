@@ -135,7 +135,7 @@ class UITests(unittest.TestCase):
             self.assertFalse(at.button(key="execute_action").disabled)
             self.assertIn("1 писем", at.button(key="execute_action").label)
 
-    def test_preview_is_not_destroyed_when_outer_selection_changes(self):
+    def test_prepared_preview_is_frozen_from_outer_selection(self):
         fake = FakeIMAP([msg(), msg("11", "offers@bolt.eu", "Bolt")])
 
         @contextlib.contextmanager
@@ -155,19 +155,21 @@ class UITests(unittest.TestCase):
             at.run()
 
             preview_id = at.session_state["preview_id"]
-            self.assertIsNotNone(at.session_state["preview"])
+            preview = at.session_state["preview"]
+            self.assertIsNotNone(preview)
+            self.assertEqual(preview["mode"], "delete_only")
 
-            # Even a real outer-selection edit must not destroy an already-built
-            # preview; it only makes the preview stale until it is refreshed.
+            # The prepared transaction remains valid and executable even if the
+            # live setup controls above are changed afterwards.
             next(c for c in at.checkbox if c.label == "Auchan").uncheck().run()
 
             self.assertFalse(at.exception)
             self.assertIsNotNone(at.session_state["preview"])
-            self.assertTrue(at.session_state["preview_stale"])
             self.assertIsNotNone(
                 at.checkbox(key=f"message_{preview_id}_uid_10")
             )
-            self.assertTrue(at.button(key="execute_action").disabled)
+            self.assertFalse(at.button(key="execute_action").disabled)
+            self.assertNotIn("preview_stale", at.session_state)
 
     def test_queued_execute_runs_even_after_preview_context_is_gone(self):
         fake = FakeIMAP()
