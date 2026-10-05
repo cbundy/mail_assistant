@@ -957,6 +957,7 @@ else:
                     T("Письма", "Emails"), key="view_" + g["key"], width="stretch"
                 ):
                     ss.view_company = g["key"]
+                    ss.view_read_filter = read_filter
                     ss.message_content = None
             if not visible:
                 st.caption(T("Ничего не найдено.", "No matches."))
@@ -1221,13 +1222,25 @@ def close_messages():
 )
 def show_company_messages(group):
     st.subheader(group["name"])
+    read_filter = ss.get("view_read_filter", "all")
     messages = sorted(
-        group["messages"], key=lambda m: (m["received"], int(m["uid"])), reverse=True
+        [
+            m
+            for m in group["messages"]
+            if service.matches_read_filter(m, read_filter)
+        ],
+        key=lambda m: (m["received"], int(m["uid"])),
+        reverse=True,
     )
     st.caption(
         T(
             "Письма из последнего сканирования; это не выбор на удаление.",
             "Messages from the last scan; this is not a deletion selection.",
+        )
+        + " · "
+        + T(
+            {"all": "все", "unread": "непрочитанные", "read": "прочитанные"}.get(read_filter, "все"),
+            {"all": "all", "unread": "unread", "read": "read"}.get(read_filter, "all"),
         )
     )
     with st.expander(T("Адреса и статистика", "Addresses and statistics")):
