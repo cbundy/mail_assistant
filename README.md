@@ -1,8 +1,17 @@
-# iCloud Mail Assistant · v3.0.0
+# iCloud Mail Assistant · v3.1.0
 
 A local, bilingual tool for reviewing iCloud mail, unsubscribing from newsletters and moving selected messages to Trash.
 
 ## English
+
+### What's new in 3.1
+
+- Compact, scrollable company list. Search comes first and bulk actions stay above the list.
+- Stable collapsible sidebar with navigation buttons, account below the Menu heading, and language selection in Settings (also available before sign-in).
+- Each company has an **Emails** button: subjects, dates and senders, plus on-demand text reading. Email HTML is converted to plain text; images and tracking pixels are not loaded. Reading uses `BODY.PEEK` and does not mark messages as read; very large messages show only their beginning.
+- Deletion is explicitly two-step: **Review and confirm → Move N emails to Trash**. Selecting “Delete only” does not execute an action. Empty advertising-filter results explain what to change; nothing is silently broadened to all mail.
+- The app checks that each moved UID has disappeared from the source folder before reporting deletion as successful. Uncertain results stop the batch and are recorded, without automatic retry.
+- The reported failure on the user's live iCloud account has not been reproduced against that account. Tests cover the UI, a fake mailbox, and real Python IMAP parsing against a local test server, not a live iCloud mailbox.
 
 ### Start and sign in
 
@@ -52,6 +61,15 @@ In GitHub Desktop, **Fetch origin → Pull origin**, close the running app and t
 Run `python -m unittest discover -s tests -v` for backend and Streamlit UI tests. The tests use a simulated IMAP server; they never touch a real mailbox. A live iCloud smoke test is still needed before relying on bulk actions.
 
 ## Русский
+
+### Что изменилось в 3.1
+
+- Компактный список компаний с собственной прокруткой. Поиск сверху, массовые действия — над списком.
+- Сворачиваемое меню больше не исчезает во время операции. Навигация кнопками, email под заголовком «Меню», выбор языка — в настройках (и на экране до входа).
+- Кнопка **«Письма»** у каждой компании: темы, даты, отправители и загрузка текста по запросу. HTML превращается в обычный текст, картинки и трекеры не загружаются. Просмотр не помечает письмо прочитанным; для очень больших писем показывается начало.
+- Удаление в два явных шага: **«Просмотреть и подтвердить → Переместить в Корзину: N писем»**. Выбор режима «Только удалить» сам по себе ничего не удаляет. Если фильтр рекламы не нашёл кандидатов, появляется объяснение; программа сама не переключается на удаление всех писем.
+- Перед отчётом об успешном удалении проверяется исчезновение UID из исходной папки. Неоднозначный результат останавливает пачку и записывается в историю без автоматического повтора.
+- Сообщённый сбой на реальном аккаунте iCloud пока не воспроизведён именно с этим аккаунтом. Проверки охватывают интерфейс, имитацию ящика и настоящий IMAP-парсер Python с локальным тестовым сервером, а не реальный iCloud.
 
 ### Запуск и вход
 

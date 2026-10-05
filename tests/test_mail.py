@@ -1,5 +1,6 @@
 import contextlib
 import json
+import imaplib
 import tempfile
 import time
 import unittest
@@ -34,6 +35,7 @@ class FakeIMAP:
         self.calls = []
         self.folder = "INBOX"
         self.fail_at = None
+        self.removed = set()
 
     def select(self, folder, readonly=True):
         self.folder = folder.strip('"')
@@ -57,6 +59,14 @@ class FakeIMAP:
         if self.fail_at == command:
             raise TimeoutError("simulated disconnect")
         if command == "SEARCH":
+            if len(args) >= 3 and args[1] == "UID":
+                return "OK", [
+                    b" ".join(
+                        m["uid"].encode()
+                        for m in self.messages
+                        if m["uid"] == args[2] and m["uid"] not in self.removed
+                    )
+                ]
             return "OK", [b" ".join(m["uid"].encode() for m in self.messages)]
         if command == "FETCH":
             chosen = [m for m in self.messages if m["uid"] in args[0].split(",")]
@@ -69,6 +79,8 @@ class FakeIMAP:
             ]
         if command in ("MOVE", "COPY"):
             self.mapping = f"456 {args[0]} {int(args[0])+100}".encode()
+        if command in ("MOVE", "EXPUNGE"):
+            self.removed.add(args[0])
         return "OK", [b"done"]
 
 
@@ -118,6 +130,60 @@ class MailTests(unittest.TestCase):
         self.assertEqual(other.rules(), {})
         self.assertIsNone(other.get("sort"))
         self.assertEqual(other.history(), [])
+
+    def test_empty_delete_is_not_success(self):
+        with self.assertRaisesRegex(svc.MailError, "no_messages"):
+            self.run_action(FakeIMAP(), uids=[])
+        self.assertFalse(self.store.history())
+
+    def test_move_ok_but_source_remains_is_not_success(self):
+        fake = FakeIMAP()
+        original = fake.uid
+
+        def uid(command, *args):
+            result = original(command, *args)
+            if command == "MOVE":
+                fake.removed.clear()
+            return result
+
+        fake.uid = uid
+        result = self.run_action(fake)
+        self.assertEqual(result["error"], "move_unconfirmed")
+        self.assertEqual(result["moved"], 0)
+        self.assertEqual(self.store.last_moves()[0]["state"], "uncertain")
+        self.assertEqual(len(self.store.scan()["messages"]), 1)
+
+    def test_error_diagnostics_do_not_include_private_reply(self):
+        detail = svc.error_details(
+            imaplib.IMAP4.error(
+                "UID command error: BAD private-password mail@example.com"
+            )
+        )
+        self.assertIn("command=UID", detail)
+        self.assertIn("response=BAD", detail)
+        self.assertNotIn("private-password", detail)
+        self.assertNotIn("mail@example.com", detail)
+
+    def test_email_html_is_only_text(self):
+        raw = b'Content-Type: text/html; charset=utf-8\r\n\r\n<head>hidden</head><p>Hello &amp; welcome</p><script>evil()</script><img src="https://tracker.test/x"><p>World</p>'
+        text = svc.message_text(raw)
+        self.assertIn("Hello & welcome", text)
+        self.assertIn("World", text)
+        self.assertNotIn("evil", text)
+        self.assertNotIn("tracker", text)
+        self.assertNotIn("hidden", text)
+
+    def test_read_uses_peek_and_readonly(self):
+        fake = FakeIMAP()
+        with self.ctx(fake):
+            value = svc.read_message(self.store, "pass", "123", msg(), lambda *a: None)
+        self.assertEqual(value["uid"], "10")
+        self.assertTrue(
+            any("BODY.PEEK[]<0." in a[1] for c, a in fake.calls if c == "FETCH")
+        )
+        self.assertFalse(
+            any(c in ("STORE", "MOVE", "COPY", "EXPUNGE") for c, a in fake.calls)
+        )
 
     def test_white_black_mutually_exclusive(self):
         self.store.policy(["a@b.c"], "white")

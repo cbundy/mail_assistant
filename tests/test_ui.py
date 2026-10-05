@@ -49,10 +49,14 @@ class UITests(unittest.TestCase):
     def test_all_pages_ru_en(self):
         at = self.app()
         for lang in ["Русский", "English"]:
-            at.sidebar.selectbox[0].set_value(lang).run()
+            at.button(key="nav_settings").click().run()
+            at.selectbox(key="language").set_value(lang).run()
             for page in ["white", "black", "groups", "history", "settings", "mail"]:
-                at.sidebar.radio[0].set_value(page).run()
+                at.button(key="nav_" + page).click().run()
                 self.assertFalse(at.exception, f"{lang} {page}")
+                self.assertEqual(len(at.sidebar.button), 7)
+                self.assertFalse(at.sidebar.radio)
+                self.assertFalse(at.sidebar.selectbox)
 
     def test_select_all_excludes_whitelist(self):
         self.store.policy(["news@auchan.pl"], "white")
@@ -78,7 +82,7 @@ class UITests(unittest.TestCase):
             next(r for r in at.radio if r.label == "Какие письма удалить").set_value(
                 "all"
             ).run()
-            self.button(at, "Подготовить предпросмотр").click().run()
+            at.button(key="prepare_action").click().run()
             job = at.session_state["job"]
             if job:
                 job.thread.join(5)
@@ -86,9 +90,9 @@ class UITests(unittest.TestCase):
             self.assertFalse(at.exception)
             self.assertIsNotNone(at.session_state["preview"])
             self.button(at, "Снять все отметки писем").click().run()
-            self.assertTrue(self.button(at, "Подтвердить: Только удалить").disabled)
+            self.assertTrue(at.button(key="execute_action").disabled)
             self.button(at, "Отметить все письма").click().run()
-            self.button(at, "Подтвердить: Только удалить").click().run()
+            at.button(key="execute_action").click().run()
             job = at.session_state["job"]
             if job:
                 job.thread.join(5)
@@ -122,9 +126,10 @@ class UITests(unittest.TestCase):
             next(
                 c for c in at.checkbox if c.label.startswith("Я разрешаю")
             ).check().run()
-            self.button(at, "Подготовить предпросмотр").click().run()
+            at.button(key="prepare_action").click().run()
             self.assertFalse(at.exception)
-            self.assertFalse(at.button)
+            self.assertEqual(len(at.sidebar.button), 7)
+            self.assertTrue(all(b.disabled for b in at.sidebar.button))
             job = at.session_state["job"]
             release.set()
             job.thread.join(5)
@@ -137,7 +142,7 @@ class UITests(unittest.TestCase):
                 next(c for c in at.checkbox if c.label.startswith("Я разрешаю")).value
             )
             self.assertIsNotNone(at.session_state["preview"])
-            self.assertTrue(any(b.label.startswith("Подтвердить:") for b in at.button))
+            self.assertIsNotNone(at.button(key="execute_action"))
 
     def test_login_job_completes(self):
         fake = FakeIMAP()
@@ -162,6 +167,109 @@ class UITests(unittest.TestCase):
                 "password-only-in-memory",
                 self.path.read_bytes().decode(errors="ignore"),
             )
+
+    def test_search_preserves_hidden_selection(self):
+        at = self.app()
+        next(c for c in at.checkbox if c.label == "Auchan").check().run()
+        at.text_input(key="company_search").input("Bolt").run()
+        self.assertEqual(at.session_state["chosen_companies"], ["auchan"])
+        self.assertFalse(at.button(key="prepare_action").disabled)
+        at.text_input(key="company_search").input("").run()
+        self.assertTrue(next(c for c in at.checkbox if c.label == "Auchan").value)
+
+    def test_company_message_dialog_has_subjects_and_reader(self):
+        at = self.app()
+        at.button(key="view_auchan").click().run()
+        self.assertFalse(at.exception)
+        self.assertTrue(any("Sale" in str(d.value) for d in at.dataframe))
+        self.assertIsNotNone(at.button(key="read_message"))
+        at.button(key="close_messages").click().run()
+        self.assertFalse(at.exception)
+        self.assertNotIn("view_company", at.session_state)
+
+    def test_empty_ad_filter_explains_no_deletion(self):
+        item = msg()
+        item["subject"] = "Hello friend"
+        fake = FakeIMAP([item])
+
+        @contextlib.contextmanager
+        def conn(*args):
+            yield fake
+
+        with patch.object(svc, "connection", conn):
+            at = self.app()
+            next(c for c in at.checkbox if c.label == "Auchan").check().run()
+            at.button(key="prepare_action").click().run()
+            job = at.session_state["job"]
+            if job:
+                job.thread.join(5)
+            at.run()
+            self.assertTrue(
+                any("Писем для удаления нет" in w.value for w in at.warning)
+            )
+            self.assertTrue(at.button(key="execute_action").disabled)
+            self.assertFalse(any(c == "MOVE" for c, a in fake.calls))
+
+    def test_controls_precede_bounded_company_list(self):
+        many = [msg(str(i), f"news@brand{i}.test", f"Brand{i}") for i in range(10, 110)]
+        self.store.save_scan("123", 100, many)
+        at = self.app()
+        self.assertTrue(at.button(key="prepare_action").disabled)
+        # Streamlit tree order is visual order, including out-of-order container writes.
+        labels = [x.key for x in at.main.button]
+        self.assertLess(
+            labels.index("prepare_action"),
+            next(i for i, k in enumerate(labels) if k and k.startswith("view_")),
+        )
+        self.assertEqual(
+            len([c for c in at.checkbox if c.key.startswith("company_")]),
+            len(svc.companies(self.store)),
+        )
+
+    def test_reader_does_not_restore_unchecked_messages(self):
+        import threading
+
+        release = threading.Event()
+        fake = FakeIMAP()
+
+        @contextlib.contextmanager
+        def conn(*args):
+            yield fake
+
+        def read(*args):
+            release.wait(5)
+            return {"uid": "10", "text": "Test body", "truncated": False}
+
+        with patch.object(svc, "connection", conn), patch.object(
+            svc, "read_message", read
+        ):
+            at = self.app()
+            next(c for c in at.checkbox if c.label == "Auchan").check().run()
+            at.button(key="prepare_action").click().run()
+            job = at.session_state["job"]
+            if job:
+                job.thread.join(5)
+            at.run()
+            self.button(at, "Снять все отметки писем").click().run()
+            self.assertTrue(at.button(key="execute_action").disabled)
+            at.button(key="view_auchan").click().run()
+            at.button(key="read_message").click().run()
+            job = at.session_state["job"]
+            release.set()
+            job.thread.join(5)
+            at.run()
+            self.assertFalse(at.exception)
+            self.assertTrue(at.button(key="execute_action").disabled)
+            self.assertFalse(any(c == "MOVE" for c, a in fake.calls))
+
+    def test_deselect_all_clears_hidden_companies(self):
+        at = self.app()
+        self.button(at, "Выбрать всё").click().run()
+        at.text_input(key="company_search").input("Bolt").run()
+        self.button(at, "Снять всё").click().run()
+        self.assertEqual(at.session_state["chosen_companies"], [])
+        at.text_input(key="company_search").input("").run()
+        self.assertFalse(any(c.value for c in at.checkbox))
 
 
 if __name__ == "__main__":

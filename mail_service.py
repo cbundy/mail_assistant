@@ -1,6 +1,8 @@
 """IMAP operations. Workers never call Streamlit; progress uses a callback."""
 
 import email
+from email import policy
+from html.parser import HTMLParser
 import imaplib
 import json
 import re
@@ -258,7 +260,88 @@ def prepare(store, password, keys, mode, scope, allow_white, progress):
         unsubs=unsubscribe_targets(messages) if mode != "delete_only" else [],
         senders=sorted(senders),
         companies=[g["name"] for g in chosen],
+        found=len(messages),
+        excluded=len(messages) - len(targets) if mode != "unsubscribe_only" else 0,
     )
+
+
+class _ReadableHTML(HTMLParser):
+    """Extract text only. Never render email HTML or fetch remote resources."""
+
+    def __init__(self):
+        super().__init__()
+        self.text = []
+        self.hidden = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("script", "style", "head"):
+            self.hidden += 1
+        if tag in ("p", "div", "br", "li", "tr") and not self.hidden:
+            self.text.append("\n")
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style", "head"):
+            self.hidden = max(0, self.hidden - 1)
+
+    def handle_data(self, data):
+        if not self.hidden:
+            self.text.append(data)
+
+
+def message_text(raw):
+    msg = email.message_from_bytes(raw, policy=policy.default)
+    plain, html = [], []
+    for part in msg.walk():
+        if part.is_multipart() or part.get_content_disposition() == "attachment":
+            continue
+        if part.get_content_type() not in ("text/plain", "text/html"):
+            continue
+        data = part.get_payload(decode=True) or b""
+        try:
+            content = data.decode(
+                part.get_content_charset() or "utf-8", errors="replace"
+            )
+        except LookupError:
+            content = data.decode("utf-8", errors="replace")
+        (plain if part.get_content_type() == "text/plain" else html).append(content)
+    if plain:
+        return "\n\n".join(plain).strip()
+    parser = _ReadableHTML()
+    parser.feed("\n".join(html))
+    return "".join(parser.text).strip()
+
+
+def read_message(store, password, validity, item, progress):
+    with account_lock(store.account), connection(store.account, password) as m:
+        progress("read", 0, 1)
+        if select(m) != validity:
+            raise MailError("stale")
+        live = fetch(m, [item["uid"]])
+        if not live:
+            raise MailError("message_missing")
+        if (live[0]["sender"], live[0]["message_id"], live[0]["subject"]) != (
+            item["sender"],
+            item["message_id"],
+            item["subject"],
+        ):
+            raise MailError("stale")
+        limit = 262144
+        rows = checked(m.uid("FETCH", item["uid"], f"(UID BODY.PEEK[]<0.{limit}>)"))
+        raw = next(
+            (
+                r[1]
+                for r in rows
+                if isinstance(r, tuple)
+                and re.search(rb"\bUID " + item["uid"].encode() + rb"\b", r[0])
+            ),
+            None,
+        )
+        if raw is None:
+            raise MailError("message_missing")
+        progress("read", 1, 1)
+        return dict(
+            uid=item["uid"], text=message_text(raw), truncated=len(raw) >= limit
+        )
 
 
 def trash_folder(m):
@@ -304,6 +387,7 @@ def move_one(m, uid, destination, record=lambda *a: None):
     if "MOVE" in caps:
         checked(m.uid("MOVE", uid, quote(destination)))
         validity, dest_uid = copy_mapping(m, uid)
+        verify_move(m, uid, validity, dest_uid, record)
         record("moved", validity, dest_uid)
         return validity, dest_uid
     if "UIDPLUS" not in caps:
@@ -315,8 +399,19 @@ def move_one(m, uid, destination, record=lambda *a: None):
         raise MailError("missing_mapping")
     checked(m.uid("STORE", uid, "+FLAGS.SILENT", r"(\Deleted)"))
     checked(m.uid("EXPUNGE", uid))
+    verify_move(m, uid, validity, dest_uid, record)
     record("moved", validity, dest_uid)
     return validity, dest_uid
+
+
+def verify_move(m, uid, validity, dest_uid, record):
+    """A tagged OK alone must not be displayed as a confirmed deletion."""
+    try:
+        if str(uid) in search(m, "UID", str(uid)):
+            raise MailError("move_unconfirmed")
+    except Exception:
+        record("uncertain", validity, dest_uid)
+        raise
 
 
 def one_click(msg):
@@ -349,6 +444,8 @@ def execute(store, password, preview, selected_uids, progress):
         if set(preview["senders"]) & white and not preview["allow_white"]:
             raise MailError("protected")
         targets = [m for m in preview["targets"] if m["uid"] in selected_uids]
+        if preview["mode"] == "delete_only" and not targets:
+            raise MailError("no_messages")
         op = store.operation(preview["mode"], {"companies": preview["companies"]})
         result = dict(
             moved=0,
@@ -447,6 +544,7 @@ def execute(store, password, preview, selected_uids, progress):
             store.finish(op, "done", result)
         except Exception as exc:
             result["error"] = error_code(exc)
+            result["error_detail"] = error_details(exc)
             store.finish(op, "partial", result)
         return result
 
@@ -490,6 +588,7 @@ def undo(store, password, progress):
             store.finish(op, "done", result)
         except Exception as exc:
             result["error"] = error_code(exc)
+            result["error_detail"] = error_details(exc)
             store.finish(op, "partial", result)
         return result
 
@@ -502,3 +601,18 @@ def error_code(exc):
     if isinstance(exc, (TimeoutError, OSError)):
         return "network"
     return "unexpected"
+
+
+def error_details(exc):
+    # Do not persist raw server replies: they can contain mail data or credentials.
+    detail = f"{error_code(exc)} · {type(exc).__name__}"
+    command = re.search(
+        r"\b(UID|MOVE|COPY|STORE|EXPUNGE|FETCH|SEARCH|SELECT|EXAMINE|LOGIN|LIST)\b",
+        str(exc),
+    )
+    if command:
+        detail += " · command=" + command[1]
+    response = re.search(r"\b(BAD|NO|BYE)\b", str(exc))
+    if response:
+        detail += " · response=" + response[1]
+    return detail
