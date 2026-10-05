@@ -901,14 +901,72 @@ else:
                         type="primary",
                         disabled=not selected_uids and not preview["unsubs"],
                     ):
-                        start(
-                            "execute",
-                            service.execute,
+                        # Execute destructive actions synchronously.  In real browsers,
+                        # handing this click off to a daemon thread could leave the UI
+                        # looking completely idle even though the button was pressed.
+                        # Keeping it in the current Streamlit run guarantees immediate
+                        # visible feedback and a deterministic result/error display.
+                        status = st.status(
+                            T("Подключение к iCloud…", "Connecting to iCloud…"),
+                            state="running",
+                            expanded=False,
+                        )
+                        bar = st.progress(0, text=T("Начинаю…", "Starting…"))
+
+                        def execute_progress(stage, current, total):
+                            labels = {
+                                "connect": T(
+                                    "Подключение к iCloud",
+                                    "Connecting to iCloud",
+                                ),
+                                "unsubscribe": T(
+                                    "Отправка запросов на отписку",
+                                    "Sending unsubscribe requests",
+                                ),
+                                "delete": T(
+                                    "Перемещение в Корзину",
+                                    "Moving to Trash",
+                                ),
+                            }
+                            text = labels.get(stage, labels["connect"])
+                            status.update(label=text, state="running")
+                            if total:
+                                value = min(current / total, 1.0)
+                                bar.progress(
+                                    value,
+                                    text=f"{text} · {current}/{total}",
+                                )
+                            else:
+                                bar.progress(0, text=text)
+
+                        result = service.execute(
                             store,
                             ss.password,
                             preview,
                             selected_uids,
+                            execute_progress,
                         )
+                        ss.result = result
+                        ss.result_kind = "execute"
+                        ss.preview = None
+                        ss.selection_version = ss.get("selection_version", 0) + 1
+                        ss.chosen_companies = []
+                        ss.pop("view_company", None)
+                        if result.get("error"):
+                            status.update(
+                                label=T(
+                                    "Действие завершилось с ошибкой",
+                                    "Action finished with an error",
+                                ),
+                                state="error",
+                            )
+                        else:
+                            bar.progress(1.0, text=T("Готово", "Done"))
+                            status.update(
+                                label=T("Готово", "Done"),
+                                state="complete",
+                            )
+                        st.rerun()
 
 
 def close_messages():
