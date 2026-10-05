@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.3.1-test"
+VERSION = "3.3.2-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -27,10 +27,16 @@ if "language" not in ss:
 LANGUAGE = ss.language
 if "dark_theme" not in ss:
     ss.dark_theme = preferences.get("theme_mode", "light") == "dark"
+if "font_size" not in ss:
+    ss.font_size = int(preferences.get("font_size", 16) or 16)
 
 
 def save_theme():
     preferences.set("theme_mode", "dark" if ss.dark_theme else "light")
+
+
+def save_font_size():
+    preferences.set("font_size", int(ss.font_size))
 
 
 def T(ru, en):
@@ -169,7 +175,7 @@ html, body, [data-testid="stApp"], [data-testid="stAppViewContainer"] {{
 }}
 html, body, input, textarea, button, label, p {{
   font-family: "Segoe UI", Inter, Arial, sans-serif;
-  font-size: 14px !important;
+  font-size: {ss.font_size}px !important;
 }}
 [data-testid="stHeader"] {{
   background: color-mix(in srgb, var(--app-bg) 96%, transparent) !important;
@@ -180,7 +186,7 @@ html, body, input, textarea, button, label, p {{
 }}
 [data-testid="stSidebar"] * {{ color: var(--text); }}
 h1 {{
-  font-size: 24px !important;
+  font-size: {ss.font_size + 10}px !important;
   font-weight: 650 !important;
   letter-spacing: -0.02em;
   color: var(--text) !important;
@@ -189,6 +195,8 @@ h2, h3, h4, [data-testid="stMetricValue"] {{
   color: var(--text) !important;
   font-weight: 650 !important;
 }}
+h2 {{ font-size: {ss.font_size + 5}px !important; }}
+h3 {{ font-size: {ss.font_size + 3}px !important; }}
 p, label, [data-testid="stCaptionContainer"] {{ color: var(--text) !important; }}
 [data-testid="stCaptionContainer"] p {{ color: var(--muted) !important; }}
 a {{ color: var(--primary) !important; }}
@@ -257,6 +265,31 @@ textarea::placeholder {{
   color: var(--muted) !important;
   opacity: .9 !important;
 }}
+[data-baseweb="base-input"],
+[data-baseweb="input"],
+[data-baseweb="select"] > div,
+[data-baseweb="textarea"],
+[data-baseweb="textarea"] > div,
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input,
+[data-testid="stSelectbox"] [role="combobox"],
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div {{
+  background-color: var(--input) !important;
+  background: var(--input) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}}
+[data-testid="stSelectbox"] [role="combobox"] * {{
+  color: var(--text) !important;
+}}
+[data-testid="stSelectbox"] svg,
+[data-testid="stTextInput"] svg,
+[data-testid="stNumberInput"] svg {{
+  color: var(--text) !important;
+  fill: var(--text) !important;
+}}
 [data-baseweb="popover"] > div,
 [role="listbox"] {{
   background: var(--surface) !important;
@@ -300,6 +333,19 @@ textarea::placeholder {{
   align-items: center;
 }}
 .st-key-company_list p {{ margin-bottom: 0; }}
+[class*="st-key-company_row_"] [data-testid="stVerticalBlockBorderWrapper"] > div {{
+  background: var(--surface-2) !important;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent) !important;
+  border-radius: 12px !important;
+  padding: .42rem .65rem !important;
+  margin-bottom: .42rem !important;
+}}
+[class*="st-key-company_row_"] [data-testid="stCheckbox"] label {{
+  font-weight: 600 !important;
+}}
+[class*="st-key-company_row_"] [data-testid="stButton"] button {{
+  min-height: 34px !important;
+}}
 [data-testid="stMainBlockContainer"] {{
   padding-top: 1.1rem;
   padding-bottom: 1.5rem;
@@ -606,6 +652,18 @@ if not ss.get("account"):
         ["Русский", "English"],
         key="language",
         on_change=lambda: preferences.set("language", ss.language),
+    )
+    st.slider(
+        T("Размер текста", "Text size"),
+        min_value=14,
+        max_value=20,
+        step=1,
+        key="font_size",
+        on_change=save_font_size,
+        help=T(
+            "Меняет размер текста во всём интерфейсе.",
+            "Changes text size throughout the interface.",
+        ),
     )
     st.subheader(T("Наведи порядок в почте iCloud", "Clean up your iCloud inbox"))
     st.write(
@@ -1058,39 +1116,48 @@ else:
             ):
                 col.caption(label)
 
-            with st.container(height=390, key="company_list", border=False):
-                for g in visible:
+            with st.container(height=430, key="company_list", border=False):
+                for row_index, g in enumerate(visible):
                     if select_key(g) not in ss:
                         ss[select_key(g)] = g["key"] in chosen
-                    cols = st.columns([4, 1, 1, 2, 1.35])
-                    checked = cols[0].checkbox(
-                        g["name"] + (" 🔒" if g["protected"] else ""),
-                        key=select_key(g),
-                        help=T(*STATUS[g["status"]]) + " · " + ", ".join(g["senders"]),
-                    )
-                    if checked:
-                        chosen.add(g["key"])
-                    else:
-                        chosen.discard(g["key"])
-                    shown_messages = view_messages(g)
-                    unread_count = sum(
-                        1 for m in g["messages"] if m.get("unread") is True
-                    )
-                    latest_shown = max(
-                        (m["received"] for m in shown_messages),
-                        default=g["latest"],
-                    )
-                    cols[1].write(str(len(shown_messages)))
-                    cols[2].write(str(unread_count))
-                    cols[3].write(date(latest_shown).split(" ")[0])
-                    if cols[4].button(
-                        T("Письма", "Emails"),
-                        key="view_" + g["key"],
-                        width="stretch",
+                    with st.container(
+                        border=True,
+                        key=f"company_row_{row_index}_{g['key']}",
                     ):
-                        ss.view_company = g["key"]
-                        ss.view_read_filter = read_filter
-                        ss.message_content = None
+                        cols = st.columns(
+                            [4, 1, 1, 2, 1.35],
+                            vertical_alignment="center",
+                        )
+                        checked = cols[0].checkbox(
+                            g["name"] + (" 🔒" if g["protected"] else ""),
+                            key=select_key(g),
+                            help=T(*STATUS[g["status"]]) + " · " + ", ".join(g["senders"]),
+                        )
+                        if checked:
+                            chosen.add(g["key"])
+                        else:
+                            chosen.discard(g["key"])
+                        shown_messages = view_messages(g)
+                        unread_count = sum(
+                            1 for m in g["messages"] if m.get("unread") is True
+                        )
+                        latest_shown = max(
+                            (m["received"] for m in shown_messages),
+                            default=g["latest"],
+                        )
+                        cols[1].markdown(f"**{len(shown_messages)}**")
+                        cols[2].markdown(
+                            f"**{unread_count}**" if unread_count else "0"
+                        )
+                        cols[3].write(date(latest_shown).split(" ")[0])
+                        if cols[4].button(
+                            T("Письма", "Emails"),
+                            key="view_" + g["key"],
+                            width="stretch",
+                        ):
+                            ss.view_company = g["key"]
+                            ss.view_read_filter = read_filter
+                            ss.message_content = None
                 if not visible:
                     st.caption(T("Ничего не найдено.", "No matches."))
 
