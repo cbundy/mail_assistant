@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.3.2-test"
+VERSION = "3.3.3-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -186,10 +186,12 @@ html, body, input, textarea, button, label, p {{
 }}
 [data-testid="stSidebar"] * {{ color: var(--text); }}
 h1 {{
-  font-size: {ss.font_size + 10}px !important;
-  font-weight: 650 !important;
-  letter-spacing: -0.02em;
+  font-size: clamp(34px, 3vw, 46px) !important;
+  line-height: 1.02 !important;
+  font-weight: 750 !important;
+  letter-spacing: -0.035em;
   color: var(--text) !important;
+  margin-bottom: .2rem !important;
 }}
 h2, h3, h4, [data-testid="stMetricValue"] {{
   color: var(--text) !important;
@@ -347,9 +349,36 @@ textarea::placeholder {{
   min-height: 34px !important;
 }}
 [data-testid="stMainBlockContainer"] {{
-  padding-top: 1.1rem;
-  padding-bottom: 1.5rem;
+  padding-top: 1.45rem;
+  padding-bottom: 2.2rem;
   max-width: 1180px;
+}}
+.st-key-theme_toggle_area {{
+  padding-top: .95rem;
+  padding-right: .35rem;
+}}
+.st-key-theme_toggle_area [data-testid="stToggle"] {{
+  display: flex;
+  justify-content: flex-end;
+  white-space: nowrap;
+}}
+.st-key-login_screen {{
+  padding-top: 1.2rem;
+}}
+.st-key-login_screen [data-testid="stMarkdownContainer"] p {{
+  line-height: 1.55 !important;
+}}
+.st-key-login_screen [data-testid="stTextInput"] {{
+  margin-bottom: .45rem;
+}}
+.st-key-login_settings {{
+  margin-top: 1.8rem;
+  padding-top: 1.15rem;
+  border-top: 1px solid var(--border);
+}}
+.st-key-login_settings [data-testid="stSelectbox"],
+.st-key-login_settings [data-testid="stSlider"] {{
+  margin-bottom: .8rem;
 }}
 .build-label {{
   color: var(--muted);
@@ -512,19 +541,20 @@ def execute_pending_request(store):
     st.rerun()
 
 
-header_left, header_right = st.columns([8, 1.4], vertical_alignment="center")
+header_left, header_right = st.columns([7.4, 2.6], vertical_alignment="top")
 with header_left:
-    st.title("📬 iCloud Mail Assistant")
+    st.title("ICLOUD MAIL ASSISTANT")
     st.markdown(
         f'<div class="build-label">TEST BUILD {VERSION} · fix/icloud-delete</div>',
         unsafe_allow_html=True,
     )
 with header_right:
-    st.toggle(
-        T("Тёмная тема", "Dark theme"),
-        key="dark_theme",
-        on_change=save_theme,
-    )
+    with st.container(key="theme_toggle_area"):
+        st.toggle(
+            T("Тёмная тема", "Dark theme"),
+            key="dark_theme",
+            on_change=save_theme,
+        )
 pages = {
     "mail": ("Почта", "Mail"),
     "white": ("Белый список", "Whitelist"),
@@ -647,78 +677,97 @@ if ss.get("last_error"):
     show_error(ss.last_error, ss.get("last_error_detail"))
 
 if not ss.get("account"):
-    st.selectbox(
-        "Language / Язык",
-        ["Русский", "English"],
-        key="language",
-        on_change=lambda: preferences.set("language", ss.language),
-    )
-    st.slider(
-        T("Размер текста", "Text size"),
-        min_value=14,
-        max_value=20,
-        step=1,
-        key="font_size",
-        on_change=save_font_size,
-        help=T(
-            "Меняет размер текста во всём интерфейсе.",
-            "Changes text size throughout the interface.",
-        ),
-    )
-    st.subheader(T("Наведи порядок в почте iCloud", "Clean up your iCloud inbox"))
-    st.write(
-        T(
-            "Находи рассылки, выбирай несколько компаний, отписывайся и переноси ненужные письма в Корзину. Перед удалением ты выбираешь конкретные письма.",
-            "Find mailings, select multiple companies, unsubscribe and move unwanted messages to Trash. Review individual messages before deleting.",
+    with st.container(key="login_screen"):
+        st.subheader(T("Наведи порядок в почте iCloud", "Clean up your iCloud inbox"))
+        st.write(
+            T(
+                "Находи рассылки, выбирай несколько компаний, отписывайся и переноси ненужные письма в Корзину. Перед удалением ты выбираешь конкретные письма.",
+                "Find mailings, select multiple companies, unsubscribe and move unwanted messages to Trash. Review individual messages before deleting.",
+            )
         )
-    )
-    st.markdown(
-        T("**1. Введи адрес почты iCloud.**", "**1. Enter your iCloud email address.**")
-    )
-    account = st.text_input(
-        T("Email iCloud", "iCloud email"),
-        key="email_input",
-        placeholder="name@icloud.com",
-    )
-    st.markdown(
-        T("**2. Создай пароль приложения.**", "**2. Create an app-specific password.**")
-    )
-    st.write(
-        T(
-            "В аккаунте Apple: «Вход и безопасность» → «Пароли приложений» → создать пароль, например для Mail Assistant. Для этого нужна двухфакторная аутентификация.",
-            "In your Apple Account: Sign-In and Security → App-Specific Passwords → generate a password, for example for Mail Assistant. Two-factor authentication is required.",
+
+        st.markdown(
+            T(
+                "**1. Введи адрес почты iCloud.**",
+                "**1. Enter your iCloud email address.**",
+            )
         )
-    )
-    st.link_button(
-        T("Открыть аккаунт Apple", "Open Apple Account"), "https://account.apple.com/"
-    )
-    st.markdown(
-        T(
-            "**3. Вставь пароль приложения и подключись.**",
-            "**3. Paste the app-specific password and connect.**",
+        account = st.text_input(
+            T("Email iCloud", "iCloud email"),
+            key="email_input",
+            placeholder="name@icloud.com",
         )
-    )
-    password = st.text_input(
-        T(
-            "Пароль приложения (не обычный пароль Apple)",
-            "App-specific password (not your regular Apple password)",
-        ),
-        type="password",
-        key="password_input",
-    )
-    st.caption(
-        T(
-            "Пароль используется только в памяти текущей сессии и не записывается на диск. История и заголовки писем хранятся локально.",
-            "Your password stays in session memory and is never written to disk. History and message headers are stored locally.",
+
+        st.markdown(
+            T(
+                "**2. Создай пароль приложения.**",
+                "**2. Create an app-specific password.**",
+            )
         )
-    )
-    if st.button(
-        T("Подключиться к iCloud", "Connect to iCloud"),
-        type="primary",
-        disabled=not (account.strip() and password.strip()),
-    ):
-        ss.pending_password = password
-        start("login", authenticate, account.strip().lower(), password)
+        st.write(
+            T(
+                "В аккаунте Apple: «Вход и безопасность» → «Пароли приложений» → создать пароль, например для Mail Assistant. Для этого нужна двухфакторная аутентификация.",
+                "In your Apple Account: Sign-In and Security → App-Specific Passwords → generate a password, for example for Mail Assistant. Two-factor authentication is required.",
+            )
+        )
+        st.link_button(
+            T("Открыть аккаунт Apple", "Open Apple Account"),
+            "https://account.apple.com/",
+        )
+
+        st.markdown(
+            T(
+                "**3. Вставь пароль приложения и подключись.**",
+                "**3. Paste the app-specific password and connect.**",
+            )
+        )
+        password = st.text_input(
+            T(
+                "Пароль приложения (не обычный пароль Apple)",
+                "App-specific password (not your regular Apple password)",
+            ),
+            type="password",
+            key="password_input",
+        )
+        st.caption(
+            T(
+                "Пароль используется только в памяти текущей сессии и не записывается на диск. История и заголовки писем хранятся локально.",
+                "Your password stays in session memory and is never written to disk. History and message headers are stored locally.",
+            )
+        )
+
+        if st.button(
+            T("Подключиться к iCloud", "Connect to iCloud"),
+            type="primary",
+            width="stretch",
+            disabled=not (account.strip() and password.strip()),
+        ):
+            ss.pending_password = password
+            start("login", authenticate, account.strip().lower(), password)
+
+        with st.container(key="login_settings"):
+            st.markdown(
+                f'<div class="section-label">{T("Интерфейс", "Interface")}</div>',
+                unsafe_allow_html=True,
+            )
+            st.selectbox(
+                "Language / Язык",
+                ["Русский", "English"],
+                key="language",
+                on_change=lambda: preferences.set("language", ss.language),
+            )
+            st.slider(
+                T("Размер текста", "Text size"),
+                min_value=14,
+                max_value=20,
+                step=1,
+                key="font_size",
+                on_change=save_font_size,
+                help=T(
+                    "Меняет размер текста во всём интерфейсе.",
+                    "Changes text size throughout the interface.",
+                ),
+            )
     st.stop()
 
 store = Store(ss.account)
