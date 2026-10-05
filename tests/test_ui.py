@@ -101,6 +101,42 @@ class UITests(unittest.TestCase):
             self.assertIsNone(at.session_state["preview"])
             self.assertTrue(any("удалено 2" in x.value for x in at.info))
 
+    def test_queued_execute_runs_even_after_preview_context_is_gone(self):
+        fake = FakeIMAP()
+
+        @contextlib.contextmanager
+        def conn(*args):
+            yield fake
+
+        with patch.object(svc, "connection", conn):
+            at = self.app()
+            next(c for c in at.checkbox if c.label == "Auchan").check().run()
+            next(r for r in at.radio if r.label == "Какие письма удалить").set_value(
+                "all"
+            ).run()
+            at.button(key="prepare_action").click().run()
+            job = at.session_state["job"]
+            if job:
+                job.thread.join(5)
+            at.run()
+            preview = at.session_state["preview"]
+            self.assertIsNotNone(preview)
+
+            # Reproduce the real-browser failure: the callback queued the action,
+            # then the preview/page context disappeared before the next render.
+            at.session_state["execute_request"] = {
+                "preview": preview,
+                "selected_uids": [m["uid"] for m in preview["targets"]],
+            }
+            at.session_state["preview"] = None
+            at.session_state["page"] = "history"
+            at.run()
+
+            self.assertFalse(at.exception)
+            self.assertEqual(len([x for x in fake.calls if x[0] == "MOVE"]), 1)
+            self.assertNotIn("execute_request", at.session_state)
+            self.assertEqual(at.session_state["result_kind"], "execute")
+
     def test_slow_preview_preserves_selection_and_consent(self):
         import threading
 
