@@ -58,6 +58,27 @@ class UITests(unittest.TestCase):
                 self.assertFalse(at.sidebar.radio)
                 self.assertFalse(at.sidebar.selectbox)
 
+    def test_read_filter_switches_visible_companies(self):
+        self.store.save_scan(
+            "123",
+            2,
+            [
+                msg("10", "news@auchan.pl", "Auchan", unread=True),
+                msg("11", "offers@bolt.eu", "Bolt", unread=False),
+            ],
+        )
+        at = self.app()
+
+        at.radio(key="read_filter_control").set_value("unread").run()
+        labels = [c.label for c in at.checkbox if c.key and c.key.startswith("company_")]
+        self.assertIn("Auchan", labels)
+        self.assertNotIn("Bolt", labels)
+
+        at.radio(key="read_filter_control").set_value("read").run()
+        labels = [c.label for c in at.checkbox if c.key and c.key.startswith("company_")]
+        self.assertIn("Bolt", labels)
+        self.assertNotIn("Auchan", labels)
+
     def test_select_all_excludes_whitelist(self):
         self.store.policy(["news@auchan.pl"], "white")
         at = self.app()
