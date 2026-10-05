@@ -18,7 +18,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.1.1-test"
+VERSION = "3.1.2-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -179,7 +179,7 @@ def authenticate(account, password, progress):
 
 
 st.title("📬 iCloud Mail Assistant")
-st.warning("TEST BUILD 3.1.1 · fix/icloud-delete")
+st.warning("TEST BUILD 3.1.2 · fix/icloud-delete")
 pages = {
     "mail": ("Почта", "Mail"),
     "white": ("Белый список", "Whitelist"),
@@ -782,7 +782,6 @@ else:
                 with st.expander(T("Выбранные компании", "Selected companies")):
                     st.write(", ".join(preview["companies"]))
                 targets = preview["targets"]
-                confirmation = st.container()
                 if mode != "unsubscribe_only" and not targets:
                     st.warning(
                         T(
@@ -880,94 +879,123 @@ else:
                         "Advertising is estimated from subjects. Check selected messages. An accepted unsubscribe request does not guarantee immediate removal.",
                     )
                 )
-                with confirmation:
-                    label = (
-                        T(
-                            f"Переместить в Корзину: {len(selected_uids)} писем",
-                            f"Move {len(selected_uids)} emails to Trash",
-                        )
-                        if mode == "delete_only"
-                        else (
-                            T("Подтвердить отписку", "Confirm unsubscribe")
-                            if mode == "unsubscribe_only"
-                            else T(
-                                f"Отписаться и переместить в Корзину: {len(selected_uids)} писем",
-                                f"Unsubscribe and move {len(selected_uids)} emails to Trash",
-                            )
+                label = (
+                    T(
+                        f"Переместить в Корзину: {len(selected_uids)} писем",
+                        f"Move {len(selected_uids)} emails to Trash",
+                    )
+                    if mode == "delete_only"
+                    else (
+                        T("Подтвердить отписку", "Confirm unsubscribe")
+                        if mode == "unsubscribe_only"
+                        else T(
+                            f"Отписаться и переместить в Корзину: {len(selected_uids)} писем",
+                            f"Unsubscribe and move {len(selected_uids)} emails to Trash",
                         )
                     )
-                    if st.button(
-                        label,
-                        key="execute_action",
-                        type="primary",
-                        disabled=not selected_uids and not preview["unsubs"],
-                    ):
-                        # Execute destructive actions synchronously.  In real browsers,
-                        # handing this click off to a daemon thread could leave the UI
-                        # looking completely idle even though the button was pressed.
-                        # Keeping it in the current Streamlit run guarantees immediate
-                        # visible feedback and a deterministic result/error display.
-                        status = st.status(
-                            T("Подключение к iCloud…", "Connecting to iCloud…"),
-                            state="running",
-                            expanded=False,
+                )
+
+                # Do not execute the destructive action inside the same widget run.
+                # Store an immutable request first; the next app rerun executes it.
+                def queue_execute():
+                    ss.execute_request = {
+                        "preview": preview,
+                        "selected_uids": list(ss.get(prefix + "_selection", [])),
+                    }
+
+                st.button(
+                    label,
+                    key="execute_action",
+                    type="primary",
+                    disabled=not selected_uids and not preview["unsubs"],
+                    on_click=queue_execute,
+                )
+
+                if ss.get("execute_request"):
+                    request = ss.pop("execute_request")
+                    st.info(
+                        T(
+                            "Команда принята. Выполняю действие…",
+                            "Command received. Running action…",
                         )
-                        bar = st.progress(0, text=T("Начинаю…", "Starting…"))
+                    )
+                    status = st.status(
+                        T("Подключение к iCloud…", "Connecting to iCloud…"),
+                        state="running",
+                        expanded=True,
+                    )
+                    bar = st.progress(0, text=T("Начинаю…", "Starting…"))
 
-                        def execute_progress(stage, current, total):
-                            labels = {
-                                "connect": T(
-                                    "Подключение к iCloud",
-                                    "Connecting to iCloud",
-                                ),
-                                "unsubscribe": T(
-                                    "Отправка запросов на отписку",
-                                    "Sending unsubscribe requests",
-                                ),
-                                "delete": T(
-                                    "Перемещение в Корзину",
-                                    "Moving to Trash",
-                                ),
-                            }
-                            text = labels.get(stage, labels["connect"])
-                            status.update(label=text, state="running")
-                            if total:
-                                value = min(current / total, 1.0)
-                                bar.progress(
-                                    value,
-                                    text=f"{text} · {current}/{total}",
-                                )
-                            else:
-                                bar.progress(0, text=text)
+                    def execute_progress(stage, current, total):
+                        labels = {
+                            "connect": T(
+                                "Подключение к iCloud",
+                                "Connecting to iCloud",
+                            ),
+                            "unsubscribe": T(
+                                "Отправка запросов на отписку",
+                                "Sending unsubscribe requests",
+                            ),
+                            "delete": T(
+                                "Перемещение в Корзину",
+                                "Moving to Trash",
+                            ),
+                        }
+                        label_text = labels.get(stage, labels["connect"])
+                        status.update(label=label_text, state="running")
+                        if total:
+                            value = min(current / total, 1.0)
+                            bar.progress(
+                                value,
+                                text=f"{label_text} · {current}/{total}",
+                            )
+                        else:
+                            bar.progress(0, text=label_text)
 
+                    try:
                         result = service.execute(
                             store,
                             ss.password,
-                            preview,
-                            selected_uids,
+                            request["preview"],
+                            request["selected_uids"],
                             execute_progress,
                         )
-                        ss.result = result
-                        ss.result_kind = "execute"
-                        ss.preview = None
-                        ss.selection_version = ss.get("selection_version", 0) + 1
-                        ss.chosen_companies = []
-                        ss.pop("view_company", None)
-                        if result.get("error"):
-                            status.update(
-                                label=T(
-                                    "Действие завершилось с ошибкой",
-                                    "Action finished with an error",
-                                ),
-                                state="error",
-                            )
-                        else:
-                            bar.progress(1.0, text=T("Готово", "Done"))
-                            status.update(
-                                label=T("Готово", "Done"),
-                                state="complete",
-                            )
-                        st.rerun()
+                    except Exception as exc:
+                        result = {
+                            "error": service.error_code(exc),
+                            "error_detail": service.error_details(exc),
+                            "moved": 0,
+                            "requested": 0,
+                            "manual": 0,
+                            "failed": 0,
+                            "skipped": 0,
+                        }
+
+                    ss.result = result
+                    ss.result_kind = "execute"
+                    ss.preview = None
+                    ss.selection_version = ss.get("selection_version", 0) + 1
+                    ss.chosen_companies = []
+                    ss.pop("view_company", None)
+
+                    if result.get("error"):
+                        status.update(
+                            label=T(
+                                "Действие завершилось с ошибкой",
+                                "Action finished with an error",
+                            ),
+                            state="error",
+                            expanded=True,
+                        )
+                        show_error(result["error"], result.get("error_detail"))
+                    else:
+                        bar.progress(1.0, text=T("Готово", "Done"))
+                        status.update(
+                            label=T("Готово", "Done"),
+                            state="complete",
+                            expanded=False,
+                        )
+                    st.rerun()
 
 
 def close_messages():
