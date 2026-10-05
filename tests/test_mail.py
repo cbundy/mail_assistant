@@ -288,7 +288,10 @@ class MailTests(unittest.TestCase):
             (row["dest_uid"], row["dest_validity"], row["state"]),
             ("110", "456", "moved"),
         )
-        self.assertIn(("MOVE", ("10", '"Deleted Messages"')), fake.calls)
+        self.assertIn(("COPY", ("10", '"Deleted Messages"')), fake.calls)
+        self.assertIn(("STORE", ("10", "+FLAGS.SILENT", r"(\Deleted)")), fake.calls)
+        self.assertIn(("EXPUNGE", ("10",)), fake.calls)
+        self.assertFalse(any(command == "MOVE" for command, _ in fake.calls))
         self.assertEqual(result["moved"], 1)
         self.assertEqual(len(self.store.scan()["messages"]), 0)
         self.assertEqual(svc.companies(self.store)[0]["recent"], 1)
@@ -309,7 +312,7 @@ class MailTests(unittest.TestCase):
 
     def test_disconnect_preserves_uncertain_not_success(self):
         fake = FakeIMAP()
-        fake.fail_at = "MOVE"
+        fake.fail_at = "COPY"
         result = self.run_action(fake)
         self.assertEqual(result["moved"], 0)
         self.assertEqual(result["error"], "network")
@@ -332,7 +335,8 @@ class MailTests(unittest.TestCase):
         with self.ctx(fake):
             result = svc.undo(self.store, "pass", lambda *a: None)
         self.assertEqual(result["restored"], 1)
-        self.assertIn(("MOVE", ("110", '"INBOX"')), fake.calls)
+        self.assertIn(("COPY", ("110", '"INBOX"')), fake.calls)
+        self.assertIn(("EXPUNGE", ("110",)), fake.calls)
         self.assertIsNone(self.store.scan())
         self.assertEqual(self.store.last_moves(), [])
 
