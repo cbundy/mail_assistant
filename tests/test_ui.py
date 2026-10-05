@@ -54,6 +54,14 @@ class UITests(unittest.TestCase):
         self.assertTrue(at.toggle(key="dark_theme").value)
         self.assertEqual(storage.Store().get("theme_mode"), "dark")
 
+    def test_font_size_setting_persists(self):
+        at = self.app()
+        at.button(key="nav_settings").click().run()
+        at.slider(key="font_size").set_value(18).run()
+        self.assertFalse(at.exception)
+        self.assertEqual(storage.Store().get("font_size"), 18)
+        self.assertEqual(at.slider(key="font_size").value, 18)
+
     def test_all_pages_ru_en(self):
         at = self.app()
         for lang in ["Русский", "English"]:
