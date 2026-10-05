@@ -6,7 +6,7 @@ textColor = "#2C3340"
 linkColor = "#8E63BA"
 borderColor = "#DEE2E6"
 showWidgetBorder = true
-baseRadius = "0.25rem"
+baseRadius = "0.75rem"
 showSidebarBorder = true
 font = "sans serif"
 
