@@ -12,6 +12,7 @@ import streamlit as st
 from storage import Store
 from session_store import COOKIE, SessionStore
 import mail_service as service
+import all_messages_ui
 
 st.set_page_config(
     page_title="iCloud Mail Assistant",
@@ -19,7 +20,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.4.0"
+VERSION = "3.5.0-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -424,6 +425,7 @@ def start(kind, fn, *args):
         return
     if kind != "read":
         ss.preview = None
+        all_messages_ui.reset_confirmation()
     elif ss.get("preview"):
         prefix = "message_" + ss.preview_id
         ss[prefix + "_restore"] = ss.get(prefix + "_selection", [])
@@ -509,6 +511,9 @@ def execute_pending_request(store):
     ss.selection_version = ss.get("selection_version", 0) + 1
     ss.chosen_companies = []
     ss.pop("view_company", None)
+    all_messages_ui.reset_confirmation()
+    ss.pop("inbox_open_uid", None)
+    ss.pop("message_content", None)
 
     if result.get("error"):
         status.update(
@@ -535,7 +540,7 @@ header_left, header_right = st.columns([7.4, 2.6], vertical_alignment="top")
 with header_left:
     st.title("ICLOUD MAIL ASSISTANT")
     st.markdown(
-        f'<div class="build-label">TEST BUILD {VERSION} · fix/icloud-delete</div>',
+        f'<div class="build-label">TEST BUILD {VERSION} · test/all-messages</div>',
         unsafe_allow_html=True,
     )
 with header_right:
@@ -556,6 +561,7 @@ with header_right:
             )
 pages = {
     "mail": ("Почта", "Mail"),
+    "inbox": ("Все письма", "All emails"),
     "white": ("Белый список", "Whitelist"),
     "black": ("Чёрный список", "Blacklist"),
     "groups": ("Объединение компаний", "Company groups"),
@@ -574,6 +580,8 @@ def navigate(page):
     ss.page = page
     ss.pop("view_company", None)
     ss.preview = None
+    all_messages_ui.reset_confirmation()
+    ss.pop("message_content", None)
 
 
 def sidebar():
@@ -838,7 +846,10 @@ if history and page != "mail":
 groups = service.companies(store)
 all_senders = sorted({s for g in groups for s in g["senders"]} | set(store.rules()))
 
-if page in ("white", "black"):
+if page == "inbox":
+    all_messages_ui.render(store, start, T, date, show_error)
+
+elif page in ("white", "black"):
     st.subheader(T(*pages[page]))
     st.write(
         T(
@@ -1708,4 +1719,3 @@ if history and page == "mail":
         + T("запросов отписки принято", "unsubscribe requests accepted")
         + f" {detail.get('requested', 0)}"
     )
-

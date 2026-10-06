@@ -91,10 +91,10 @@ class UITests(unittest.TestCase):
         for lang in ["Русский", "English"]:
             at.button(key="nav_settings").click().run()
             at.selectbox(key="language").set_value(lang).run()
-            for page in ["white", "black", "groups", "history", "settings", "mail"]:
+            for page in ["white", "black", "groups", "history", "settings", "mail", "inbox"]:
                 at.button(key="nav_" + page).click().run()
                 self.assertFalse(at.exception, f"{lang} {page}")
-                self.assertEqual(len(at.sidebar.button), 7)
+                self.assertEqual(len(at.sidebar.button), 8)
                 self.assertFalse(at.sidebar.radio)
                 self.assertFalse(at.sidebar.selectbox)
 
@@ -292,7 +292,7 @@ class UITests(unittest.TestCase):
             ).check().run()
             at.button(key="prepare_action").click().run()
             self.assertFalse(at.exception)
-            self.assertEqual(len(at.sidebar.button), 7)
+            self.assertEqual(len(at.sidebar.button), 8)
             self.assertTrue(all(b.disabled for b in at.sidebar.button))
             job = at.session_state["job"]
             release.set()
