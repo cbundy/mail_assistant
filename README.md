@@ -1,20 +1,18 @@
-# iCloud Mail Assistant · v3.5.0-test
+# iCloud Mail Assistant · v3.6.0-test
 
 A local, bilingual tool for reviewing iCloud mail, unsubscribing from newsletters and moving selected messages to Trash.
 
-## Test build 3.5: All emails / Все письма
+## Test build 3.6: unified Mail / Почта
 
-**Test branch: `test/all-messages`**, based on the native-theme and refresh-safe session build 3.4.0 in `fix/icloud-delete`. `main` is unchanged.
+Test branch: `test/unified-mail`, based on the merged 3.5 inbox build in `fix/icloud-delete`.
 
-- New **All emails** menu entry next to Mail. Browse individual Inbox messages, search subjects/sender names/addresses, filter All/Unread/Read, sort and page through 25/50/100 messages.
-- **Load / refresh all emails** scans the entire Inbox without the company scan limit. Until then, the page shows the saved scan and clearly identifies partial samples. Other folders (Sent, Archive, Trash, etc.) are not included.
-- Message selection survives search, page changes, navigation and text loading. New messages start unselected. Select page skips whitelisted senders; Clear selection also clears hidden selections.
-- Review freezes the exact selected messages, including selections outside the current page. A separate confirmation moves only those messages to Trash using existing identity checks, history and Undo. Whitelisted messages require explicit permission; policy is checked again at execution.
-- Reading loads plain text on demand with `BODY.PEEK`, without marking mail read, rendering HTML or loading images/trackers. No compose/send feature is added. Large bodies are limited to their beginning as in the company reader.
+- One **Mail** page opens newest Inbox messages and switches to companies by message count, name or recent activity. All/Unread/Read filters and company/email/subject search apply to both views.
+- Open a message, then open its company to browse that company's emails. Back restores the parent search and page. Selection is shared between messages and companies; Select all covers matching results across pages and skips whitelist entries. Select blacklist also respects search/read filters and whitelist protection.
+- Delete, unsubscribe, or unsubscribe and delete use a frozen confirmation. A company with no explicit selection defaults to matching emails; an explicit override includes all company emails irrespective of read/search filters. Each detected mailing list and manual/automatic unsubscribe status appears in confirmation. Whitelist consent is checked again at execution. Undo and history reuse recorded moves.
+- Menu: Mail, Whitelist, Blacklist, Settings, Sign out. Settings contains language, persisted text size (14–24 px), action history and manual company grouping. Native light/dark themes and refresh-safe sign-in are preserved. A larger gap separates the version from the mail filters.
+- Inbox only, plain-text reading on demand via BODY.PEEK, no compose/send. Scans load all Inbox headers; partial old scans are identified until refreshed.
 
-**Как проверить:** GitHub Desktop → Fetch origin → Current branch → `test/all-messages` → закрыть приложение и запустить `START.bat`. В меню открыть **«Все письма»** и нажать **«Загрузить / обновить все письма»**. После поиска или перехода на другую страницу отмеченные письма сохраняются; счётчик показывает, сколько выбранных писем находится вне текущей страницы. **«Просмотреть и подтвердить»** показывает точный список, отдельная кнопка перемещает его в Корзину. Отправка писем не добавлена. В этой версии доступны все **Входящие**, а не другие папки аккаунта.
-
-New browsing logic lives in `all_messages.py`, and its native Streamlit page in `all_messages_ui.py`; the existing provider operations and session/theme handling are reused.
+**Как проверить:** GitHub Desktop → Fetch origin → Current branch → `test/unified-mail` → закрыть приложение и заново запустить `START.bat`. Версия **3.6.0-test**. Основные ветки не изменяются.
 
 ## English
 

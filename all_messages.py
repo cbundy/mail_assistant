@@ -61,3 +61,22 @@ def deletion_preview(store, validity, selected_uids, allow_white=False):
         found=len(targets),
         excluded=0,
     )
+
+
+def action_preview(store, validity, selected_uids, mode="delete_only", allow_white=False):
+    """Freeze exact message and subscription targets for all three actions."""
+    if mode not in ("delete_only", "unsubscribe_only", "unsubscribe_delete"):
+        raise service.MailError("empty")
+    preview = deletion_preview(store, validity, selected_uids, allow_white)
+    messages = preview["targets"]
+    preview["mode"] = mode
+    if mode != "delete_only":
+        preview["unsubs"] = service.unsubscribe_targets(messages)
+    if mode == "unsubscribe_only":
+        preview["targets"] = []
+    selected = set(selected_uids)
+    preview["companies"] = [
+        g["name"] for g in service.companies(store)
+        if any(m["uid"] in selected for m in g["messages"])
+    ]
+    return preview
