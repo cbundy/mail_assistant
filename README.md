@@ -1,6 +1,20 @@
-# iCloud Mail Assistant · v3.1.0
+# iCloud Mail Assistant · v3.5.0-test
 
 A local, bilingual tool for reviewing iCloud mail, unsubscribing from newsletters and moving selected messages to Trash.
+
+## Test build 3.5: All emails / Все письма
+
+**Test branch: `test/all-messages`**, based on the native-theme and refresh-safe session build 3.4.0 in `fix/icloud-delete`. `main` is unchanged.
+
+- New **All emails** menu entry next to Mail. Browse individual Inbox messages, search subjects/sender names/addresses, filter All/Unread/Read, sort and page through 25/50/100 messages.
+- **Load / refresh all emails** scans the entire Inbox without the company scan limit. Until then, the page shows the saved scan and clearly identifies partial samples. Other folders (Sent, Archive, Trash, etc.) are not included.
+- Message selection survives search, page changes, navigation and text loading. New messages start unselected. Select page skips whitelisted senders; Clear selection also clears hidden selections.
+- Review freezes the exact selected messages, including selections outside the current page. A separate confirmation moves only those messages to Trash using existing identity checks, history and Undo. Whitelisted messages require explicit permission; policy is checked again at execution.
+- Reading loads plain text on demand with `BODY.PEEK`, without marking mail read, rendering HTML or loading images/trackers. No compose/send feature is added. Large bodies are limited to their beginning as in the company reader.
+
+**Как проверить:** GitHub Desktop → Fetch origin → Current branch → `test/all-messages` → закрыть приложение и запустить `START.bat`. В меню открыть **«Все письма»** и нажать **«Загрузить / обновить все письма»**. После поиска или перехода на другую страницу отмеченные письма сохраняются; счётчик показывает, сколько выбранных писем находится вне текущей страницы. **«Просмотреть и подтвердить»** показывает точный список, отдельная кнопка перемещает его в Корзину. Отправка писем не добавлена. В этой версии доступны все **Входящие**, а не другие папки аккаунта.
+
+New browsing logic lives in `all_messages.py`, and its native Streamlit page in `all_messages_ui.py`; the existing provider operations and session/theme handling are reused.
 
 ## English
 
