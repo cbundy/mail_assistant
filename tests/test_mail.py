@@ -10,13 +10,21 @@ import mail_service as svc
 from storage import Store
 
 
-def msg(uid="10", sender="news@auchan.pl", name="Auchan", kind="promo", received=100):
+def msg(
+    uid="10",
+    sender="news@auchan.pl",
+    name="Auchan",
+    kind="promo",
+    received=100,
+    unread=True,
+):
     return dict(
         uid=uid,
         sender=sender,
         name=name,
         kind=kind,
         received=received,
+        unread=unread,
         subject="Sale",
         date="",
         message_id="<" + uid + "@test>",
@@ -72,7 +80,11 @@ class FakeIMAP:
             chosen = [m for m in self.messages if m["uid"] in args[0].split(",")]
             return "OK", [
                 (
-                    f'1 (UID {m["uid"]} INTERNALDATE "05-Oct-2026 10:20:30 +0000"'.encode(),
+                    (
+                        f'1 (UID {m["uid"]} FLAGS '
+                        + ('()' if m.get("unread", True) else r'(\Seen)')
+                        + ' INTERNALDATE "05-Oct-2026 10:20:30 +0000"'
+                    ).encode(),
                     f'From: {m["name"]} <{m["sender"]}>\r\nSubject: {m["subject"]}\r\nMessage-ID: {m["message_id"]}\r\nList-Unsubscribe: <https://example.com/unsub>\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n\r\n'.encode(),
                 )
                 for m in chosen
@@ -130,6 +142,20 @@ class MailTests(unittest.TestCase):
         self.assertEqual(other.rules(), {})
         self.assertIsNone(other.get("sort"))
         self.assertEqual(other.history(), [])
+
+
+    def test_operation_trace_is_persisted_and_running_can_be_recovered(self):
+        op = self.store.operation("delete_only", {"companies": ["Auchan"]})
+        self.store.trace(op, "connect_start")
+        row = self.store.history()[0]
+        detail = json.loads(row["detail"])
+        self.assertEqual(detail["last_step"], "connect_start")
+        self.assertEqual(detail["trace"][-1]["step"], "connect_start")
+        self.assertEqual(self.store.recover_running(), 1)
+        row = self.store.history()[0]
+        detail = json.loads(row["detail"])
+        self.assertEqual(row["status"], "interrupted")
+        self.assertEqual(detail["last_step"], "interrupted_on_restart")
 
     def test_empty_delete_is_not_success(self):
         with self.assertRaisesRegex(svc.MailError, "no_messages"):
@@ -224,6 +250,28 @@ class MailTests(unittest.TestCase):
             {"Auchan", "MyHeritage", "Apple"},
         )
 
+    def test_recent_deleted_uses_three_day_window(self):
+        now = 10 * 86400
+
+        with patch("storage.time.time", return_value=now - 2 * 86400):
+            recent_op = self.store.operation("delete_only", {"companies": ["Auchan"]})
+        recent_id = self.store.prepare_move(
+            recent_op, "INBOX", "123", msg("20"), "Deleted Messages"
+        )
+        self.store.move_state(recent_id, "moved", "456", "120")
+
+        with patch("storage.time.time", return_value=now - 4 * 86400):
+            old_op = self.store.operation("delete_only", {"companies": ["Auchan"]})
+        old_id = self.store.prepare_move(
+            old_op, "INBOX", "123", msg("21"), "Deleted Messages"
+        )
+        self.store.move_state(old_id, "moved", "456", "121")
+
+        with patch("storage.time.time", return_value=now):
+            counts = self.store.recent_deleted()
+
+        self.assertEqual(counts["news@auchan.pl"], 1)
+
     def test_seen_counter_deduplicates_and_survives_deletion(self):
         with patch("storage.time.time", return_value=50):
             self.store.unsubscribe("news@auchan.pl", "requested")
@@ -245,9 +293,43 @@ class MailTests(unittest.TestCase):
                 "delete_only",
                 "all",
                 False,
+                "all",
                 lambda *a: None,
             )
         self.assertEqual([m["uid"] for m in p["targets"]], ["10"])
+
+    def test_fetch_tracks_seen_flag(self):
+        fake = FakeIMAP([msg("10", unread=True), msg("11", unread=False)])
+        items = svc.fetch(fake, ["10", "11"])
+        by_uid = {m["uid"]: m for m in items}
+        self.assertTrue(by_uid["10"]["unread"])
+        self.assertFalse(by_uid["11"]["unread"])
+
+    def test_prepare_filters_by_read_state(self):
+        fake = FakeIMAP(
+            [
+                msg("10", unread=True),
+                msg("11", unread=False),
+            ]
+        )
+        self.store.save_scan(
+            "123",
+            2,
+            [msg("10", unread=True), msg("11", unread=False)],
+        )
+        with self.ctx(fake):
+            p = svc.prepare(
+                self.store,
+                "pass",
+                ["auchan"],
+                "delete_only",
+                "all",
+                False,
+                "unread",
+                lambda *a: None,
+            )
+        self.assertEqual([m["uid"] for m in p["targets"]], ["10"])
+        self.assertEqual(p["read_filter"], "unread")
 
     def test_unchecked_message_never_moved(self):
         fake = FakeIMAP([msg(), msg("11")])
@@ -289,6 +371,7 @@ class MailTests(unittest.TestCase):
             ("110", "456", "moved"),
         )
         self.assertIn(("MOVE", ("10", '"Deleted Messages"')), fake.calls)
+        self.assertFalse(any(command == "COPY" for command, _ in fake.calls))
         self.assertEqual(result["moved"], 1)
         self.assertEqual(len(self.store.scan()["messages"]), 0)
         self.assertEqual(svc.companies(self.store)[0]["recent"], 1)
@@ -296,7 +379,23 @@ class MailTests(unittest.TestCase):
             "not-persisted", self.path.read_bytes().decode(errors="ignore")
         )
 
-    def test_fallback_only_targeted_expunge(self):
+    def test_uidplus_fallback_when_move_is_explicitly_rejected(self):
+        fake = FakeIMAP()
+        original = fake.uid
+
+        def uid(command, *args):
+            if command.upper() == "MOVE":
+                fake.calls.append(("MOVE", args))
+                return "NO", [b"move rejected"]
+            return original(command, *args)
+
+        fake.uid = uid
+        result = self.run_action(fake)
+        self.assertEqual(result["moved"], 1)
+        self.assertIn(("COPY", ("10", '"Deleted Messages"')), fake.calls)
+        self.assertIn(("EXPUNGE", ("10",)), fake.calls)
+
+    def test_uidplus_only_uses_targeted_expunge(self):
         fake = FakeIMAP(caps=(b"UIDPLUS",))
         self.run_action(fake)
         self.assertIn(("EXPUNGE", ("10",)), fake.calls)

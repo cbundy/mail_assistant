@@ -92,7 +92,7 @@ def fetch(m, uids, progress=lambda *a: None):
             m.uid(
                 "FETCH",
                 ",".join(batch),
-                "(UID INTERNALDATE BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID LIST-ID LIST-UNSUBSCRIBE LIST-UNSUBSCRIBE-POST)])",
+                "(UID FLAGS INTERNALDATE BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID LIST-ID LIST-UNSUBSCRIBE LIST-UNSUBSCRIBE-POST)])",
             )
         )
         for row in rows:
@@ -105,6 +105,13 @@ def fetch(m, uids, progress=lambda *a: None):
             msg = email.message_from_bytes(raw)
             name, sender = parseaddr(msg.get("From", ""))
             subject = decode_header_text(msg.get("Subject", ""))
+            flags_match = re.search(rb"\bFLAGS \(([^)]*)\)", meta)
+            flags = (
+                flags_match[1].lower().split()
+                if flags_match
+                else []
+            )
+            unread = b"\\seen" not in flags
             dt = re.search(rb'INTERNALDATE "([^"]+)"', meta)
             try:
                 received = (
@@ -121,6 +128,7 @@ def fetch(m, uids, progress=lambda *a: None):
                     subject=subject,
                     date=decode_header_text(msg.get("Date", "")),
                     received=received,
+                    unread=unread,
                     kind=classify_subject(subject),
                     message_id=msg.get("Message-ID", ""),
                     list_id=msg.get("List-ID", ""),
@@ -224,7 +232,15 @@ def unsubscribe_targets(messages):
     return list(targets.values())
 
 
-def prepare(store, password, keys, mode, scope, allow_white, progress):
+def matches_read_filter(message, read_filter):
+    if read_filter == "unread":
+        return message.get("unread") is True
+    if read_filter == "read":
+        return message.get("unread") is False
+    return True
+
+
+def prepare(store, password, keys, mode, scope, allow_white, read_filter, progress):
     chosen = [g for g in companies(store) if g["key"] in keys]
     if not chosen:
         raise MailError("empty")
@@ -243,7 +259,7 @@ def prepare(store, password, keys, mode, scope, allow_white, progress):
         messages = [
             x
             for x in fetch(m, sorted(uids, key=int), progress)
-            if x["sender"] in senders
+            if x["sender"] in senders and matches_read_filter(x, read_filter)
         ]
     targets = [
         x
@@ -254,6 +270,7 @@ def prepare(store, password, keys, mode, scope, allow_white, progress):
         keys=sorted(keys),
         mode=mode,
         scope=scope,
+        read_filter=read_filter,
         allow_white=allow_white,
         validity=validity,
         targets=targets,
@@ -377,32 +394,66 @@ def copy_mapping(m, uid):
     return None, None
 
 
-def move_one(m, uid, destination, record=lambda *a: None):
-    """Never issue broad EXPUNGE. Persist COPYUID before removing the source."""
+def move_one(
+    m,
+    uid,
+    destination,
+    record=lambda *a: None,
+    trace=lambda *a, **k: None,
+):
+    """Move one message safely with a simple primary path and diagnostics.
+
+    Prefer UID MOVE when the server advertises it. If the server explicitly
+    rejects MOVE and also supports UIDPLUS, fall back to COPY + \\Deleted +
+    UID EXPUNGE. Ambiguous network failures are never retried automatically.
+    """
     caps = {
         c.decode().upper() if isinstance(c, bytes) else c.upper()
         for c in m.capabilities
     }
+    trace("capabilities", move="MOVE" in caps, uidplus="UIDPLUS" in caps)
     m.response("COPYUID")  # discard stale mapping
+
     if "MOVE" in caps:
-        checked(m.uid("MOVE", uid, quote(destination)))
+        trace("move_send")
+        result = m.uid("MOVE", uid, quote(destination))
+        status = result[0].decode() if isinstance(result[0], bytes) else result[0]
+        if str(status).upper() == "OK":
+            trace("move_ok")
+            validity, dest_uid = copy_mapping(m, uid)
+            trace("move_mapping", mapped=bool(dest_uid))
+            trace("verify_source_absent")
+            verify_move(m, uid, validity, dest_uid, record)
+            trace("verified")
+            record("moved", validity, dest_uid)
+            return validity, dest_uid
+
+        trace("move_rejected")
+        if "UIDPLUS" not in caps:
+            checked(result)
+
+    if "UIDPLUS" in caps:
+        trace("copy_send")
+        checked(m.uid("COPY", uid, quote(destination)))
+        trace("copy_ok")
         validity, dest_uid = copy_mapping(m, uid)
+        trace("copy_mapping", mapped=bool(dest_uid))
+        record("copied", validity, dest_uid)
+        if not dest_uid:
+            raise MailError("missing_mapping")
+        trace("store_deleted_send")
+        checked(m.uid("STORE", uid, "+FLAGS.SILENT", r"(\Deleted)"))
+        trace("store_deleted_ok")
+        trace("uid_expunge_send")
+        checked(m.uid("EXPUNGE", uid))
+        trace("uid_expunge_ok")
+        trace("verify_source_absent")
         verify_move(m, uid, validity, dest_uid, record)
+        trace("verified")
         record("moved", validity, dest_uid)
         return validity, dest_uid
-    if "UIDPLUS" not in caps:
-        raise MailError("unsafe_move")
-    checked(m.uid("COPY", uid, quote(destination)))
-    validity, dest_uid = copy_mapping(m, uid)
-    record("copied", validity, dest_uid)
-    if not dest_uid:
-        raise MailError("missing_mapping")
-    checked(m.uid("STORE", uid, "+FLAGS.SILENT", r"(\Deleted)"))
-    checked(m.uid("EXPUNGE", uid))
-    verify_move(m, uid, validity, dest_uid, record)
-    record("moved", validity, dest_uid)
-    return validity, dest_uid
 
+    raise MailError("unsafe_move")
 
 def verify_move(m, uid, validity, dest_uid, record):
     """A tagged OK alone must not be displayed as a confirmed deletion."""
@@ -446,7 +497,19 @@ def execute(store, password, preview, selected_uids, progress):
         targets = [m for m in preview["targets"] if m["uid"] in selected_uids]
         if preview["mode"] == "delete_only" and not targets:
             raise MailError("no_messages")
-        op = store.operation(preview["mode"], {"companies": preview["companies"]})
+
+        op = store.operation(
+            preview["mode"],
+            {
+                "companies": preview["companies"],
+                "target_count": len(targets),
+                "unsubscribe_count": len(preview["unsubs"]),
+            },
+        )
+
+        def trace(step, **fields):
+            store.trace(op, step, **fields)
+
         result = dict(
             moved=0,
             requested=0,
@@ -457,17 +520,41 @@ def execute(store, password, preview, selected_uids, progress):
             companies=preview["companies"],
             outcomes=[],
         )
+        trace(
+            "operation_started",
+            mode=preview["mode"],
+            targets=len(targets),
+            unsubscribes=len(preview["unsubs"]),
+        )
         try:
             # Validate mailbox epoch before any side effect, including unsubscribe.
+            trace("connect_start")
             with connection(store.account, password) as m:
+                trace("connected")
                 progress("connect", 0, 0)
-                if select(m, readonly=False) != preview["validity"]:
+                validity = select(m, readonly=False)
+                trace("inbox_selected")
+                if validity != preview["validity"]:
+                    trace("uidvalidity_changed")
                     raise MailError("stale")
+                trace("uidvalidity_ok")
+
                 if preview["mode"] != "delete_only":
                     per_sender = defaultdict(list)
                     for i, item in enumerate(preview["unsubs"]):
                         progress("unsubscribe", i, len(preview["unsubs"]))
+                        trace(
+                            "unsubscribe_start",
+                            index=i + 1,
+                            total=len(preview["unsubs"]),
+                        )
                         status, detail = one_click(item)
+                        trace(
+                            "unsubscribe_result",
+                            index=i + 1,
+                            total=len(preview["unsubs"]),
+                            status=status,
+                        )
                         per_sender[item["sender"]].append(status)
                         result["outcomes"].append(
                             {
@@ -489,29 +576,76 @@ def execute(store, password, preview, selected_uids, progress):
                     for sender, statuses in per_sender.items():
                         if len(set(statuses)) > 1:
                             store.unsubscribe(sender, "partial")
+
                 if targets:
+                    trace("trash_lookup_start")
                     destination = trash_folder(m)
+                    trace("trash_found")
                     caps = {
                         x.decode().upper() if isinstance(x, bytes) else x.upper()
                         for x in m.capabilities
                     }
+                    trace(
+                        "delete_capabilities",
+                        move="MOVE" in caps,
+                        uidplus="UIDPLUS" in caps,
+                    )
                     if not {"MOVE", "UIDPLUS"} & caps:
                         raise MailError("unsafe_move")
+
                     for i, item in enumerate(targets):
                         progress("delete", i, len(targets))
+                        trace(
+                            "message_start",
+                            index=i + 1,
+                            total=len(targets),
+                            uid=item["uid"],
+                        )
+                        trace(
+                            "message_fetch_start",
+                            index=i + 1,
+                            total=len(targets),
+                            uid=item["uid"],
+                        )
                         live = fetch(m, [item["uid"]])
+                        trace(
+                            "message_fetch_done",
+                            index=i + 1,
+                            total=len(targets),
+                            uid=item["uid"],
+                            found=bool(live),
+                        )
                         if not live:
                             result["skipped"] += 1
                             store.remove_cached(preview["validity"], item["uid"])
+                            trace(
+                                "message_missing",
+                                index=i + 1,
+                                total=len(targets),
+                                uid=item["uid"],
+                            )
                             continue
                         if (
                             live[0]["sender"],
                             live[0]["message_id"],
                             live[0]["subject"],
                         ) != (item["sender"], item["message_id"], item["subject"]):
+                            trace(
+                                "message_identity_changed",
+                                index=i + 1,
+                                total=len(targets),
+                                uid=item["uid"],
+                            )
                             raise MailError("stale")
+
                         ident = store.prepare_move(
                             op, "INBOX", preview["validity"], item, destination
+                        )
+                        trace(
+                            "move_record_created",
+                            index=i + 1,
+                            total=len(targets),
+                            uid=item["uid"],
                         )
                         try:
                             move_one(
@@ -521,15 +655,23 @@ def execute(store, password, preview, selected_uids, progress):
                                 lambda state, v, u: store.move_state(
                                     ident, state, v, u
                                 ),
+                                lambda step, **fields: trace(
+                                    step,
+                                    index=i + 1,
+                                    total=len(targets),
+                                    uid=item["uid"],
+                                    **fields,
+                                ),
                             )
                         except Exception:
                             # Do not retry an ambiguous network result automatically.
-                            with store.connect() as c:
-                                c.execute(
+                            with store.connect() as db:
+                                db.execute(
                                     "UPDATE moves SET state='uncertain' WHERE id=? AND state='pending'",
                                     (ident,),
                                 )
                             raise
+
                         result["moved"] += 1
                         result["outcomes"].append(
                             {
@@ -540,14 +682,32 @@ def execute(store, password, preview, selected_uids, progress):
                             }
                         )
                         store.remove_cached(preview["validity"], item["uid"])
+                        trace(
+                            "message_done",
+                            index=i + 1,
+                            total=len(targets),
+                            uid=item["uid"],
+                        )
                         progress("delete", i + 1, len(targets))
+
+            trace(
+                "operation_complete",
+                moved=result["moved"],
+                requested=result["requested"],
+                failed=result["failed"],
+                skipped=result["skipped"],
+            )
             store.finish(op, "done", result)
         except Exception as exc:
             result["error"] = error_code(exc)
             result["error_detail"] = error_details(exc)
+            trace(
+                "operation_error",
+                error=result["error"],
+                detail=result["error_detail"],
+            )
             store.finish(op, "partial", result)
         return result
-
 
 def undo(store, password, progress):
     with account_lock(store.account):

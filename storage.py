@@ -171,19 +171,95 @@ class Store:
 
     def operation(self, kind, detail):
         ident = uuid.uuid4().hex
+        payload = dict(detail)
+        payload.setdefault("trace", [])
+        payload.setdefault("last_step", "created")
         with self.connect() as c:
             c.execute(
                 "INSERT INTO operations VALUES(?,?,?,?,?,?)",
-                (ident, self.account, kind, time.time(), "running", json.dumps(detail)),
+                (ident, self.account, kind, time.time(), "running", json.dumps(payload)),
             )
         return ident
 
+    def trace(self, ident, step, **fields):
+        """Persist a small diagnostic breadcrumb immediately.
+
+        This intentionally stores only structured step names and identifiers,
+        never raw IMAP replies, message bodies, or credentials.
+        """
+        with self.connect() as c:
+            row = c.execute(
+                "SELECT detail FROM operations WHERE id=? AND account=?",
+                (ident, self.account),
+            ).fetchone()
+            if not row:
+                return
+            try:
+                payload = json.loads(row["detail"])
+            except (TypeError, json.JSONDecodeError):
+                payload = {}
+            trace = payload.setdefault("trace", [])
+            entry = {"stamp": time.time(), "step": step}
+            entry.update(fields)
+            trace.append(entry)
+            # Bound local history so a pathological job cannot grow forever.
+            if len(trace) > 200:
+                payload["trace"] = trace[-200:]
+            payload["last_step"] = step
+            c.execute(
+                "UPDATE operations SET detail=? WHERE id=? AND account=?",
+                (json.dumps(payload), ident, self.account),
+            )
+
     def finish(self, ident, status, detail):
         with self.connect() as c:
+            row = c.execute(
+                "SELECT detail FROM operations WHERE id=? AND account=?",
+                (ident, self.account),
+            ).fetchone()
+            try:
+                payload = json.loads(row["detail"]) if row else {}
+            except (TypeError, json.JSONDecodeError):
+                payload = {}
+            payload.update(detail)
+            payload["last_step"] = (
+                "complete" if status == "done" else payload.get("last_step", status)
+            )
             c.execute(
                 "UPDATE operations SET status=?,detail=? WHERE id=? AND account=?",
-                (status, json.dumps(detail), ident, self.account),
+                (status, json.dumps(payload), ident, self.account),
             )
+
+    def recover_running(self):
+        """Mark jobs left running by a previous app process as interrupted."""
+        if not self.account:
+            return 0
+        count = 0
+        with self.connect() as c:
+            rows = c.execute(
+                "SELECT id,detail FROM operations WHERE account=? AND status='running'",
+                (self.account,),
+            ).fetchall()
+            for row in rows:
+                try:
+                    payload = json.loads(row["detail"])
+                except (TypeError, json.JSONDecodeError):
+                    payload = {}
+                trace = payload.setdefault("trace", [])
+                trace.append(
+                    {
+                        "stamp": time.time(),
+                        "step": "interrupted_on_restart",
+                    }
+                )
+                payload["last_step"] = "interrupted_on_restart"
+                payload["interrupted"] = True
+                c.execute(
+                    "UPDATE operations SET status='interrupted',detail=? WHERE id=? AND account=?",
+                    (json.dumps(payload), row["id"], self.account),
+                )
+                count += 1
+        return count
 
     def history(self):
         with self.connect() as c:
@@ -241,6 +317,6 @@ class Store:
             return dict(
                 c.execute(
                     "SELECT m.sender,COUNT(*) FROM moves m JOIN operations o ON m.operation=o.id WHERE m.account=? AND m.state='moved' AND o.stamp>? GROUP BY m.sender",
-                    (self.account, time.time() - 30 * 86400),
+                    (self.account, time.time() - 3 * 86400),
                 ).fetchall()
             )
