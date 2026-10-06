@@ -1,6 +1,7 @@
 """Native Streamlit inbox browser; persistent selection is not widget state."""
 
 import math
+import re
 import pandas as pd
 import streamlit as st
 import mail_service as service
@@ -365,13 +366,16 @@ def render(store, start, T, date, show_error):
             prefix = ("● " if m.get("unread") else "") + (
                 "🔒 " if m["sender"] in white else ""
             )
+            # Button labels support Markdown, including remote images. Treat
+            # untrusted email subjects as literal text, as the reader does.
+            label = re.sub(r"([\\`*_{}\[\]()<>#+\-.!|~$])", r"\\\1", subject)
             cols[1].button(
-                prefix + subject,
+                prefix + label,
                 key="inbox_open_" + m["uid"],
                 width="stretch",
                 on_click=open_message,
                 args=(m["uid"],),
-                help=subject,
+                help=label,
             )
             cols[2].text(m["name"] or m["sender"])
             if m["name"]:
