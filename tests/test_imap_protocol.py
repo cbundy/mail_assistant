@@ -101,6 +101,7 @@ class ProtocolTests(unittest.TestCase):
                                 "delete_only",
                                 "all",
                                 False,
+                                "all",
                                 lambda *a: None,
                             )
                             self.assertEqual(len(preview["targets"]), 1)
