@@ -34,7 +34,7 @@ class InboxTests(unittest.TestCase):
         )
         at.session_state["account"] = self.store.account
         at.session_state["password"] = "test-only"
-        at.session_state["page"] = "inbox"
+        at.session_state["page"] = "mail"
         at.run()
         self.assertFalse(at.exception)
         return at
@@ -65,7 +65,7 @@ class InboxTests(unittest.TestCase):
         self.assertEqual(at.session_state["inbox_selected"], ["10", "39"])
         at.radio(key="inbox_filter").set_value("unread").run()
         at.button(key="nav_white").click().run()
-        at.button(key="nav_inbox").click().run()
+        at.button(key="nav_mail").click().run()
         self.assertEqual(at.session_state["inbox_selected"], ["10", "39"])
         at.text_input(key="inbox_search").input("").run()
         at.radio(key="inbox_filter").set_value("all").run()
@@ -194,6 +194,76 @@ class InboxTests(unittest.TestCase):
         at.checkbox(key="inbox_uid_39").uncheck().run()
         self.assertIsNone(at.session_state.get("inbox_confirmation"))
         self.assertTrue(at.button(key="inbox_review").disabled)
+
+    def test_reader_company_transition_restores_search_page_and_selection(self):
+        at = self.app()
+        at.button(key="inbox_next").click().run()
+        at.checkbox(key="inbox_uid_10").check().run()
+        at.button(key="inbox_open_10").click().run()
+        at.button(key="reader_company").click().run()
+        self.assertEqual(at.session_state["inbox_company"], "auchan")
+        at.button(key="company_back").click().run()
+        self.assertEqual(at.session_state["inbox_page"], 1)
+        self.assertTrue(at.checkbox(key="inbox_uid_10").value)
+        at.text_input(key="inbox_search").input("Letter 10").run()
+        at.button(key="inbox_open_10").click().run()
+        at.button(key="reader_company").click().run()
+        self.assertEqual(at.text_input(key="inbox_search").value, "")
+        at.button(key="company_back").click().run()
+        self.assertEqual(at.text_input(key="inbox_search").value, "Letter 10")
+
+    def test_company_bulk_scope_respects_filter_and_explicit_all_override(self):
+        at = self.app()
+        at.radio(key="inbox_filter").set_value("unread").run()
+        at.selectbox(key="mail_display").set_value("company_count").run()
+        at.button(key="company_open_auchan").click().run()
+        at.button(key="inbox_review").click().run()
+        self.assertEqual(len(at.session_state["inbox_confirmation"]["targets"]), 15)
+        at.checkbox(key="company_all").check().run()
+        self.assertIsNone(at.session_state.get("inbox_confirmation"))
+        at.button(key="inbox_review").click().run()
+        self.assertEqual(len(at.session_state["inbox_confirmation"]["targets"]), 30)
+
+    def test_unsubscribe_only_and_combined_actions_use_frozen_subscription_targets(self):
+        for mode in ["unsubscribe_only", "unsubscribe_delete"]:
+            with self.subTest(mode=mode):
+                self.store.save_scan("123", 30, self.messages)
+                fake = FakeIMAP(self.messages)
+                with self.connection(fake), patch.object(svc, "one_click", return_value=("requested", "HTTP 200")) as unsub:
+                    at = self.app()
+                    at.checkbox(key="inbox_uid_39").check().run()
+                    at.button(key="inbox_" + mode).click().run()
+                    preview = at.session_state["inbox_confirmation"]
+                    self.assertEqual(preview["mode"], mode)
+                    self.assertEqual(len(preview["unsubs"]), 1)
+                    at.button(key="inbox_confirm").click().run()
+                    self.assertFalse(at.exception)
+                    at.run()
+                    self.assertEqual(unsub.call_count, 1)
+                    self.assertEqual(len([c for c, a in fake.calls if c == "MOVE"]), 0 if mode == "unsubscribe_only" else 1)
+
+    def test_view_settings_survive_menu_navigation(self):
+        at = self.app()
+        at.text_input(key="inbox_search").input("Letter").run()
+        at.radio(key="inbox_filter").set_value("unread").run()
+        at.selectbox(key="mail_display").set_value("company_name").run()
+        at.button(key="nav_settings").click().run()
+        at.button(key="nav_mail").click().run()
+        self.assertEqual(at.text_input(key="inbox_search").value, "Letter")
+        self.assertEqual(at.radio(key="inbox_filter").value, "unread")
+        self.assertEqual(at.selectbox(key="mail_display").value, "company_name")
+
+    def test_select_blacklist_respects_search_and_whitelist(self):
+        extra = msg("40", "offers@bolt.eu", "Bolt", received=40)
+        self.store.save_scan("123", 31, self.messages + [extra])
+        self.store.policy(["news@auchan.pl", "offers@bolt.eu"], "black")
+        self.store.policy(["news@auchan.pl"], "white")
+        at = self.app()
+        at.button(key="inbox_black").click().run()
+        self.assertEqual(at.session_state["inbox_selected"], ["40"])
+        at.button(key="inbox_clear").click().run()
+        at.text_input(key="inbox_search").input("Letter 10").run()
+        self.assertTrue(at.button(key="inbox_black").disabled)
 
 
 if __name__ == "__main__":

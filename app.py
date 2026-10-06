@@ -20,7 +20,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-VERSION = "3.5.0-test"
+VERSION = "3.6.0-test"
 ss = st.session_state
 preferences = Store()
 if "language" not in ss:
@@ -421,6 +421,7 @@ class Job:
 
 
 def start(kind, fn, *args):
+    all_messages_ui.remember_view()
     if ss.get("job") and not ss.job.done:
         return
     if kind != "read":
@@ -540,7 +541,7 @@ header_left, header_right = st.columns([7.4, 2.6], vertical_alignment="top")
 with header_left:
     st.title("ICLOUD MAIL ASSISTANT")
     st.markdown(
-        f'<div class="build-label">TEST BUILD {VERSION} · test/all-messages</div>',
+        f'<div class="build-label">TEST BUILD {VERSION} · test/unified-mail</div>',
         unsafe_allow_html=True,
     )
 with header_right:
@@ -561,11 +562,8 @@ with header_right:
             )
 pages = {
     "mail": ("Почта", "Mail"),
-    "inbox": ("Все письма", "All emails"),
     "white": ("Белый список", "Whitelist"),
     "black": ("Чёрный список", "Blacklist"),
-    "groups": ("Объединение компаний", "Company groups"),
-    "history": ("История", "History"),
     "settings": ("Настройки", "Settings"),
 }
 
@@ -577,6 +575,7 @@ def reset_read_filter_selection():
 
 
 def navigate(page):
+    all_messages_ui.remember_view()
     ss.page = page
     ss.pop("view_company", None)
     ss.preview = None
@@ -803,7 +802,7 @@ if not ss.get("account"):
             st.slider(
                 T("Размер текста", "Text size"),
                 min_value=14,
-                max_value=20,
+                max_value=24,
                 step=1,
                 key="font_size",
                 on_change=save_font_size,
@@ -827,6 +826,9 @@ if not ss.get(recovery_key):
 execute_pending_request(store)
 
 page = ss.get("page", "mail")
+if page in ("inbox", "history", "groups"):
+    page = "mail" if page == "inbox" else "settings"
+    ss.page = page
 
 history = store.history()
 if history and page != "mail":
@@ -846,56 +848,7 @@ if history and page != "mail":
 groups = service.companies(store)
 all_senders = sorted({s for g in groups for s in g["senders"]} | set(store.rules()))
 
-if page == "inbox":
-    all_messages_ui.render(store, start, T, date, show_error)
-
-elif page in ("white", "black"):
-    st.subheader(T(*pages[page]))
-    st.write(
-        T(
-            "Белый список защищает от массовых действий; включить такие компании можно только с отдельным разрешением.",
-            "Whitelist entries are excluded from bulk selection and require explicit permission.",
-        )
-        if page == "white"
-        else T(
-            "Чёрный список помогает быстро выбрать нежелательных отправителей. Ничего не удаляется автоматически.",
-            "Blacklist entries help select unwanted senders quickly. Nothing is deleted automatically.",
-        )
-    )
-    chosen = st.multiselect(T("Добавить отправителей", "Add senders"), all_senders)
-    company_keys = st.multiselect(
-        T("Или целые компании", "Or entire companies"),
-        [g["key"] for g in groups],
-        format_func=lambda k: next(g["name"] for g in groups if g["key"] == k),
-    )
-    extra = st.text_input(T("Или введи точный email", "Or enter an exact email"))
-    if st.button(T("Добавить", "Add")):
-        targets = set(chosen) | {
-            s for g in groups if g["key"] in company_keys for s in g["senders"]
-        }
-        if extra.strip():
-            if "@" in extra and not any(c in extra for c in "\r\n ,"):
-                targets.add(extra.strip().lower())
-            else:
-                st.error(
-                    T("Введи один полный email.", "Enter one complete email address.")
-                )
-        if targets:
-            store.policy(targets, page)
-            ss.preview = None
-            st.rerun()
-    current = [s for s, r in store.rules().items() if r["policy"] == page]
-    remove = st.multiselect(T("Удалить из списка", "Remove from list"), current)
-    if st.button(T("Убрать выбранных", "Remove selected"), disabled=not remove):
-        store.policy(remove, "")
-        ss.preview = None
-        st.rerun()
-    if current:
-        st.dataframe(pd.DataFrame({"Email": current}), hide_index=True, width="stretch")
-    else:
-        st.caption(T("Список пуст.", "The list is empty."))
-
-elif page == "groups":
+def render_group_settings():
     st.subheader(T("Ручная группировка", "Manual grouping"))
     st.caption(
         T(
@@ -943,7 +896,8 @@ elif page == "groups":
         ss.preview = None
         st.rerun()
 
-elif page == "history":
+
+def render_history_settings():
     st.subheader(T("История действий", "Action history"))
     if ss.get("recovered_operations"):
         st.info(
@@ -1008,6 +962,57 @@ elif page == "history":
                 )
             st.json({k: v for k, v in detail.items() if k != "trace"})
 
+
+
+if page in ("mail", "inbox"):
+    all_messages_ui.render(store, start, T, date, show_error)
+
+elif page in ("white", "black"):
+    st.subheader(T(*pages[page]))
+    st.write(
+        T(
+            "Белый список защищает от массовых действий; включить такие компании можно только с отдельным разрешением.",
+            "Whitelist entries are excluded from bulk selection and require explicit permission.",
+        )
+        if page == "white"
+        else T(
+            "Чёрный список помогает быстро выбрать нежелательных отправителей. Ничего не удаляется автоматически.",
+            "Blacklist entries help select unwanted senders quickly. Nothing is deleted automatically.",
+        )
+    )
+    chosen = st.multiselect(T("Добавить отправителей", "Add senders"), all_senders)
+    company_keys = st.multiselect(
+        T("Или целые компании", "Or entire companies"),
+        [g["key"] for g in groups],
+        format_func=lambda k: next(g["name"] for g in groups if g["key"] == k),
+    )
+    extra = st.text_input(T("Или введи точный email", "Or enter an exact email"))
+    if st.button(T("Добавить", "Add")):
+        targets = set(chosen) | {
+            s for g in groups if g["key"] in company_keys for s in g["senders"]
+        }
+        if extra.strip():
+            if "@" in extra and not any(c in extra for c in "\r\n ,"):
+                targets.add(extra.strip().lower())
+            else:
+                st.error(
+                    T("Введи один полный email.", "Enter one complete email address.")
+                )
+        if targets:
+            store.policy(targets, page)
+            ss.preview = None
+            st.rerun()
+    current = [s for s, r in store.rules().items() if r["policy"] == page]
+    remove = st.multiselect(T("Удалить из списка", "Remove from list"), current)
+    if st.button(T("Убрать выбранных", "Remove selected"), disabled=not remove):
+        store.policy(remove, "")
+        ss.preview = None
+        st.rerun()
+    if current:
+        st.dataframe(pd.DataFrame({"Email": current}), hide_index=True, width="stretch")
+    else:
+        st.caption(T("Список пуст.", "The list is empty."))
+
 elif page == "settings":
     st.subheader(T("Настройки", "Settings"))
     st.selectbox(
@@ -1016,10 +1021,18 @@ elif page == "settings":
         key="language",
         on_change=lambda: preferences.set("language", ss.language),
     )
+    st.slider(
+        T("Размер текста", "Text size"), 14, 24, step=1,
+        key="font_size", on_change=save_font_size,
+    )
+    with st.expander(T("История", "History")):
+        render_history_settings()
+    with st.expander(T("Объединение компаний", "Company groups")):
+        render_group_settings()
     st.write(
         T(
-            "Язык и сортировка сохраняются автоматически. Пароль не сохраняется.",
-            "Language and sorting are saved automatically. Passwords are never saved.",
+            "Язык и размер текста сохраняются автоматически.",
+            "Language and text size are saved automatically.",
         )
     )
     st.caption(
@@ -1036,640 +1049,6 @@ elif page == "settings":
                 "An old cache without account identity and UIDVALIDITY was found. Scan once for reliable history and Undo. The old file is preserved.",
             )
         )
-
-else:
-    scan = store.scan()
-    read_filters = {
-        "all": ("Все", "All"),
-        "unread": ("Непрочитанные", "Unread"),
-        "read": ("Прочитанные", "Read"),
-    }
-    read_state_available = bool(scan and scan["messages"]) and all(
-        "unread" in m for m in scan["messages"]
-    )
-    stored_read_filter = store.get("read_filter", "all")
-    if stored_read_filter not in read_filters or not read_state_available:
-        stored_read_filter = "all"
-
-    st.markdown(
-        f'<div class="section-label">{T("Показывать письма", "Show messages")}</div>',
-        unsafe_allow_html=True,
-    )
-    read_filter = st.radio(
-        T("Показывать письма", "Show messages"),
-        list(read_filters),
-        index=list(read_filters).index(stored_read_filter),
-        format_func=lambda k: T(*read_filters[k]),
-        horizontal=True,
-        key="read_filter_control",
-        disabled=not read_state_available,
-        on_change=reset_read_filter_selection,
-        label_visibility="collapsed",
-    )
-    if not read_state_available:
-        st.caption(
-            T(
-                "После первого нового сканирования здесь станет доступен фильтр «Все / Непрочитанные / Прочитанные».",
-                "After one fresh scan, the All / Unread / Read filter will be available here.",
-            )
-        )
-        read_filter = "all"
-    store.set("read_filter", read_filter)
-
-    st.markdown(
-        f'<div class="section-label">{T("Сканирование", "Scan")}</div>',
-        unsafe_allow_html=True,
-    )
-    limits = [500, 1000, 5000, 0]
-    default = store.get("limit", 1000)
-    scan_cols = st.columns([2.2, 1.4])
-    limit = scan_cols[0].selectbox(
-        T("Сколько последних писем сканировать", "How many recent emails to scan"),
-        limits,
-        index=limits.index(default) if default in limits else 1,
-        format_func=lambda n: (
-            T(f"Последние {n} писем", f"Latest {n} emails")
-            if n
-            else T("Все письма", "All emails")
-        ),
-        label_visibility="collapsed",
-    )
-    store.set("limit", limit)
-    if scan_cols[1].button(
-        T("Сканировать почту", "Scan inbox"),
-        type="primary",
-        width="stretch",
-    ):
-        start("scan", service.scan, store, ss.password, limit)
-
-    batch = store.last_moves()
-    eligible = [
-        row
-        for row in batch
-        if row["state"] == "moved" and row["dest_uid"] and row["dest_validity"]
-    ]
-
-    if not scan:
-        st.info(
-            T(
-                "Начни со сканирования. Письма при этом не изменяются.",
-                "Start with a scan. This does not modify messages.",
-            )
-        )
-    else:
-        def view_messages(group):
-            return [
-                m
-                for m in group["messages"]
-                if service.matches_read_filter(m, read_filter)
-            ]
-
-        st.markdown(
-            f'<div class="section-label">{T("Компании", "Companies")}</div>',
-            unsafe_allow_html=True,
-        )
-        with st.container(border=True, key="company_table"):
-            toolbar = st.columns([2.3, 1, 1, 1.5])
-            sorts = {
-                "count": ("Больше всего писем", "Most emails"),
-                "date": ("Последнее письмо", "Latest email"),
-                "name": ("Название", "Name"),
-                "deleted": ("Удалено за 3 дня", "Deleted in the last 3 days"),
-            }
-            stored_sort = store.get("sort", "count")
-            if stored_sort not in sorts:
-                stored_sort = "count"
-            sort = toolbar[0].selectbox(
-                T("Сортировка", "Sort"),
-                list(sorts),
-                index=list(sorts).index(stored_sort),
-                format_func=lambda k: T(*sorts[k]),
-                label_visibility="collapsed",
-                key="company_sort",
-            )
-            store.set("sort", sort)
-
-            query = st.text_input(
-                T("Поиск компании или email", "Search company or email"),
-                placeholder=T("Поиск компании или email", "Search company or email"),
-                label_visibility="collapsed",
-                key="company_search",
-            )
-
-            visible = [
-                g
-                for g in groups
-                if query.casefold()
-                in (g["name"] + " " + " ".join(g["senders"])).casefold()
-                and (read_filter == "all" or view_messages(g))
-            ]
-            visible.sort(
-                key=lambda g: (
-                    len(view_messages(g))
-                    if sort == "count"
-                    else (
-                        max(
-                            (m["received"] for m in view_messages(g)),
-                            default=g["latest"],
-                        )
-                        if sort == "date"
-                        else g["recent"] if sort == "deleted" else g["name"].casefold()
-                    )
-                ),
-                reverse=sort != "name",
-            )
-
-            version = ss.get("selection_version", 0)
-            select_key = lambda g: f"company_{version}_{g['key']}"
-
-            if toolbar[1].button(
-                T("Выбрать всё", "Select all"),
-                key="select_all_companies",
-                width="stretch",
-            ):
-                for g in visible:
-                    ss[select_key(g)] = not g["protected"]
-            if toolbar[2].button(
-                T("Снять всё", "Deselect all"),
-                key="deselect_all_companies",
-                width="stretch",
-            ):
-                for g in groups:
-                    ss[select_key(g)] = False
-                ss.chosen_companies = []
-            if toolbar[3].button(
-                T("Выбрать чёрный список", "Select blacklist"),
-                key="select_blacklist_companies",
-                width="stretch",
-            ):
-                for g in visible:
-                    ss[select_key(g)] = g["black"] and not g["protected"]
-
-            chosen = set(ss.get("chosen_companies", []))
-            with st.container(height=430, key="company_list", border=False):
-                with st.container(border=False, key="company_header"):
-                    heads = st.columns([4, 1, 1, 2, 1.35], vertical_alignment="center")
-                    for index, (col, label) in enumerate(
-                        zip(
-                            heads,
-                            [
-                                T("Компания", "Company"),
-                                T("Писем", "Emails"),
-                                T("Непроч.", "Unread"),
-                                T("Последнее", "Latest"),
-                                T("Просмотр", "Preview"),
-                            ],
-                        )
-                    ):
-                        align_class = "" if index == 0 else " center"
-                        col.markdown(
-                            f'<div class="company-col-head{align_class}">{label}</div>',
-                            unsafe_allow_html=True,
-                        )
-                for row_index, g in enumerate(visible):
-                    if select_key(g) not in ss:
-                        ss[select_key(g)] = g["key"] in chosen
-                    with st.container(
-                        border=False,
-                        key=f"company_row_{row_index}_{g['key']}",
-                    ):
-                        cols = st.columns(
-                            [4, 1, 1, 2, 1.35],
-                            vertical_alignment="center",
-                        )
-                        checked = cols[0].checkbox(
-                            g["name"] + (" 🔒" if g["protected"] else ""),
-                            key=select_key(g),
-                            help=T(*STATUS[g["status"]]) + " · " + ", ".join(g["senders"]),
-                        )
-                        if checked:
-                            chosen.add(g["key"])
-                        else:
-                            chosen.discard(g["key"])
-                        shown_messages = view_messages(g)
-                        unread_count = sum(
-                            1 for m in g["messages"] if m.get("unread") is True
-                        )
-                        latest_shown = max(
-                            (m["received"] for m in shown_messages),
-                            default=g["latest"],
-                        )
-                        cols[1].markdown(
-                            f'<div class="company-cell center"><strong>{len(shown_messages)}</strong></div>',
-                            unsafe_allow_html=True,
-                        )
-                        cols[2].markdown(
-                            f'<div class="company-cell center">{"<strong>" + str(unread_count) + "</strong>" if unread_count else "0"}</div>',
-                            unsafe_allow_html=True,
-                        )
-                        cols[3].markdown(
-                            f'<div class="company-cell center">{date(latest_shown).split(" ")[0]}</div>',
-                            unsafe_allow_html=True,
-                        )
-                        if cols[4].button(
-                            T("Письма", "Emails"),
-                            key="view_" + g["key"],
-                            width="stretch",
-                        ):
-                            ss.view_company = g["key"]
-                            ss.view_read_filter = read_filter
-                            ss.message_content = None
-                if not visible:
-                    st.caption(T("Ничего не найдено.", "No matches."))
-
-        selected = [g for g in groups if g["key"] in chosen]
-        ss.chosen_companies = sorted(g["key"] for g in selected)
-
-        st.markdown(
-            f'<div class="section-label">{T("Действие", "Action")}</div>',
-            unsafe_allow_html=True,
-        )
-        with st.container(border=True, key="action_panel"):
-            st.caption(
-                T(
-                    f"Выбрано компаний: {len(selected)}",
-                    f"Selected companies: {len(selected)}",
-                )
-            )
-            hidden_count = len(
-                [g for g in selected if g["key"] not in {v["key"] for v in visible}]
-            )
-            if hidden_count:
-                st.caption(
-                    T(
-                        f"Скрыто текущим фильтром: {hidden_count}.",
-                        f"Hidden by the current filter: {hidden_count}.",
-                    )
-                )
-
-            modes = {
-                "delete_only": ("Только удалить", "Delete only"),
-                "unsubscribe_only": ("Только отписаться", "Unsubscribe only"),
-                "both": ("Отписаться и удалить", "Unsubscribe and delete"),
-            }
-            mode = st.radio(
-                T("Действие", "Action"),
-                list(modes),
-                index=list(modes).index(store.get("mode", "delete_only")),
-                format_func=lambda k: T(*modes[k]),
-                horizontal=True,
-                key="action_mode",
-            )
-            store.set("mode", mode)
-
-            scope = "promo"
-            if mode != "unsubscribe_only":
-                scope = st.radio(
-                    T("Какие письма удалить", "Which emails to delete"),
-                    ["promo", "all"],
-                    index=["promo", "all"].index(store.get("scope", "promo")),
-                    format_func=lambda k: (
-                        T("Только вероятная реклама", "Likely advertising only")
-                        if k == "promo"
-                        else T(
-                            "Все письма выбранных компаний",
-                            "All emails from selected companies",
-                        )
-                    ),
-                    horizontal=True,
-                    key="delete_scope",
-                )
-            store.set("scope", scope)
-
-            allow_white = False
-            if any(g["protected"] for g in selected):
-                consent_key = "consent_" + ",".join(sorted(g["key"] for g in selected))
-                if consent_key not in ss:
-                    ss[consent_key] = bool(
-                        ss.get("preview")
-                        and ss.preview["allow_white"]
-                        and ss.preview["keys"] == sorted(g["key"] for g in selected)
-                    )
-                allow_white = st.checkbox(
-                    T(
-                        "Я разрешаю это действие для выбранных компаний из белого списка",
-                        "I explicitly allow this action for selected whitelisted companies",
-                    ),
-                    key=consent_key,
-                )
-
-            keys = sorted(g["key"] for g in selected)
-            ss.chosen_companies = keys
-            if st.button(
-                T("Просмотреть и подтвердить →", "Review and confirm →"),
-                key="prepare_action",
-                type="primary",
-                width="stretch",
-                disabled=not keys
-                or (any(g["protected"] for g in selected) and not allow_white),
-            ):
-                start(
-                    "prepare",
-                    service.prepare,
-                    store,
-                    ss.password,
-                    keys,
-                    mode,
-                    scope,
-                    allow_white,
-                    read_filter,
-                )
-
-            preview = ss.get("preview")
-            if preview:
-                preview_mode = preview["mode"]
-                preview_read_filter = preview.get("read_filter", "all")
-                st.divider()
-                st.subheader(
-                    T("Предпросмотр и подтверждение", "Preview and confirmation")
-                )
-                with st.expander(T("Выбранные компании", "Selected companies")):
-                    st.write(", ".join(preview["companies"]))
-                st.caption(
-                    T("Фильтр писем: ", "Message filter: ")
-                    + T(*read_filters.get(preview_read_filter, read_filters["all"]))
-                )
-                targets = preview["targets"]
-                if preview_mode != "unsubscribe_only" and not targets:
-                    st.warning(
-                        T(
-                            "Писем для удаления нет. Фильтр «Только вероятная реклама» мог исключить их — выбери «Все письма выбранных компаний» и снова нажми «Просмотреть и подтвердить». Если и там пусто, письма уже не во Входящих.",
-                            "No deletion candidates. The advertising filter may have excluded them: choose ‘All emails from selected companies’ and review again. If still empty, the messages are no longer in the inbox.",
-                        )
-                    )
-                elif preview_mode != "unsubscribe_only" and preview.get("excluded"):
-                    st.caption(
-                        T(
-                            f"Фильтр рекламы исключил писем: {preview['excluded']}.",
-                            f"Advertising filter excluded {preview['excluded']} messages.",
-                        )
-                    )
-
-                prefix = "message_" + ss.preview_id
-                selected_uids = []
-                if targets:
-                    def message_key(uid):
-                        return f"{prefix}_uid_{uid}"
-
-                    restore = ss.get(prefix + "_restore")
-                    default_selected = ss.get(prefix + "_default", True)
-                    for m in targets:
-                        key = message_key(m["uid"])
-                        if key not in ss:
-                            ss[key] = (
-                                m["uid"] in restore
-                                if restore is not None
-                                else default_selected
-                            )
-
-                    a, b = st.columns(2)
-                    if a.button(
-                        T("Отметить все письма", "Select all messages"),
-                        key=prefix + "_select_all",
-                        width="stretch",
-                    ):
-                        for m in targets:
-                            ss[message_key(m["uid"])] = True
-                        ss.pop(prefix + "_restore", None)
-                        st.rerun()
-                    if b.button(
-                        T("Снять все отметки писем", "Deselect all messages"),
-                        key=prefix + "_deselect_all",
-                        width="stretch",
-                    ):
-                        for m in targets:
-                            ss[message_key(m["uid"])] = False
-                        ss.pop(prefix + "_restore", None)
-                        st.rerun()
-
-                    with st.container(height=300, border=True):
-                        heads = st.columns([0.8, 2.3, 2.2, 4.7])
-                        heads[0].caption(T("Удалить", "Delete"))
-                        heads[1].caption(T("Дата", "Date"))
-                        heads[2].caption(T("Отправитель", "Sender"))
-                        heads[3].caption(T("Тема", "Subject"))
-
-                        for m in targets:
-                            row = st.columns([0.8, 2.3, 2.2, 4.7])
-                            checked = row[0].checkbox(
-                                T("Удалить", "Delete"),
-                                key=message_key(m["uid"]),
-                                label_visibility="collapsed",
-                            )
-                            row[1].write(m["date"] or "—")
-                            row[2].write(m["sender"])
-                            subject = m["subject"] or T("Без темы", "No subject")
-                            kind = (
-                                T("реклама", "advertising")
-                                if m["kind"] == "promo"
-                                else (
-                                    T("важное", "important")
-                                    if m["kind"] == "important"
-                                    else T("другое", "other")
-                                )
-                            )
-                            row[3].write(f"{subject} · {kind}")
-                            if checked:
-                                selected_uids.append(m["uid"])
-
-                    ss[prefix + "_selection"] = list(selected_uids)
-
-                auto = sum(
-                    bool(m["one_click"])
-                    and any(urlparse(u).scheme == "https" for u in m["urls"])
-                    for m in preview["unsubs"]
-                )
-                manual = len(preview["unsubs"]) - auto
-                no_method = (
-                    len(
-                        set(preview["senders"])
-                        - {m["sender"] for m in preview["unsubs"]}
-                    )
-                    if preview_mode != "delete_only"
-                    else 0
-                )
-                st.write(
-                    T(
-                        f"Компаний: {len(preview['keys'])} · в Корзину: {len(selected_uids)} · автоотписок: до {auto} · ручных: {manual} · без способа отписки: {no_method}",
-                        f"Companies: {len(preview['keys'])} · to Trash: {len(selected_uids)} · automatic requests: up to {auto} · manual: {manual} · no unsubscribe method: {no_method}",
-                    )
-                )
-                st.caption(
-                    T(
-                        "Реклама определяется приблизительно по теме. Проверь выбранные письма. Успешный запрос отписки не гарантирует её немедленное выполнение.",
-                        "Advertising is estimated from subjects. Check selected messages. An accepted unsubscribe request does not guarantee immediate removal.",
-                    )
-                )
-                label = (
-                    T(
-                        f"Переместить в Корзину: {len(selected_uids)} писем",
-                        f"Move {len(selected_uids)} emails to Trash",
-                    )
-                    if preview_mode == "delete_only"
-                    else (
-                        T("Подтвердить отписку", "Confirm unsubscribe")
-                        if preview_mode == "unsubscribe_only"
-                        else T(
-                            f"Отписаться и переместить в Корзину: {len(selected_uids)} писем",
-                            f"Unsubscribe and move {len(selected_uids)} emails to Trash",
-                        )
-                    )
-                )
-
-                def queue_execute():
-                    ss.execute_request = {
-                        "preview": preview,
-                        "selected_uids": list(ss.get(prefix + "_selection", [])),
-                    }
-
-                st.button(
-                    label,
-                    key="execute_action",
-                    type="primary",
-                    width="stretch",
-                    disabled=not selected_uids and not preview["unsubs"],
-                    on_click=queue_execute,
-                )
-
-        st.caption(
-            T(
-                f"Сохранено {date(scan['stamp'])} · в выборке {len(scan['messages'])} из {scan['total']} писем.",
-                f"Saved {date(scan['stamp'])} · sample: {len(scan['messages'])} of {scan['total']} emails.",
-            )
-        )
-
-    if st.button(
-        T("↩ Вернуть последнее удаление", "↩ Undo last deletion"),
-        key="undo_last_delete",
-        disabled=not eligible,
-    ):
-        start("undo", service.undo, store, ss.password)
-    if batch and len(eligible) != len(batch):
-        st.caption(
-            T(
-                "Возврат доступен только для подтверждённо перемещённых писем с сохранённым новым UID.",
-                "Undo is available only for confirmed moves with a saved destination UID.",
-            )
-        )
-
-
-def close_messages():
-    ss.pop("view_company", None)
-    ss.pop("message_content", None)
-
-
-@st.dialog(
-    T("Письма компании", "Company emails"), width="large", on_dismiss=close_messages
-)
-def show_company_messages(group):
-    st.subheader(group["name"])
-    read_filter = ss.get("view_read_filter", "all")
-    messages = sorted(
-        [
-            m
-            for m in group["messages"]
-            if service.matches_read_filter(m, read_filter)
-        ],
-        key=lambda m: (m["received"], int(m["uid"])),
-        reverse=True,
-    )
-    st.caption(
-        T(
-            "Письма из последнего сканирования; это не выбор на удаление.",
-            "Messages from the last scan; this is not a deletion selection.",
-        )
-        + " · "
-        + T(
-            {"all": "все", "unread": "непрочитанные", "read": "прочитанные"}.get(read_filter, "все"),
-            {"all": "all", "unread": "unread", "read": "read"}.get(read_filter, "all"),
-        )
-    )
-    with st.expander(T("Адреса и статистика", "Addresses and statistics")):
-        st.text(", ".join(group["senders"]))
-        st.write(T(*STATUS[group["status"]]))
-        st.caption(
-            T(
-                f"Удалено за 3 дня: {group['recent']} · новых после отписки: {group['after']}. Счётчик ограничен сканированиями.",
-                f"Deleted in 3 days: {group['recent']} · new after unsubscribe: {group['after']}. Counts are limited to scans.",
-            )
-        )
-    if messages:
-        st.dataframe(
-            pd.DataFrame(
-                [
-                    {
-                        T("Тема", "Subject"): m["subject"],
-                        T("Дата", "Date"): m["date"] or date(m["received"]),
-                        T("Отправитель", "Sender"): m["sender"],
-                    }
-                    for m in messages
-                ]
-            ),
-            hide_index=True,
-            height=240,
-            width="stretch",
-        )
-        uid = st.selectbox(
-            T("Письмо для чтения", "Message to read"),
-            [m["uid"] for m in messages],
-            format_func=lambda u: next(
-                m["subject"] or T("Без темы", "No subject")
-                for m in messages
-                if m["uid"] == u
-            ),
-            key="read_uid_" + group["key"],
-        )
-        item = next(m for m in messages if m["uid"] == uid)
-        if st.button(
-            T("Открыть текст письма", "Open message text"), key="read_message"
-        ):
-            ss.message_content = None
-            start(
-                "read",
-                service.read_message,
-                store,
-                ss.password,
-                store.scan()["validity"],
-                item,
-            )
-        content = ss.get("message_content")
-        if content and content["uid"] == uid:
-            if content["truncated"]:
-                st.caption(
-                    T(
-                        "Показано начало большого письма.",
-                        "Showing the beginning of a large message.",
-                    )
-                )
-            st.text(
-                content["text"]
-                or T(
-                    "Текст недоступен; возможно, письмо содержит только изображения.",
-                    "No text available; the message may contain only images.",
-                )
-            )
-        st.caption(
-            T(
-                "Без загрузки картинок и трекеров. Письмо не помечается прочитанным.",
-                "No images or trackers are loaded. The message is not marked as read.",
-            )
-        )
-    else:
-        st.info(
-            T(
-                "В сохранённой выборке писем нет. Просканируй почту заново.",
-                "No messages in the saved sample. Scan the inbox again.",
-            )
-        )
-    if st.button(T("Закрыть", "Close"), key="close_messages"):
-        close_messages()
-        st.rerun()
-
-
-if ss.get("view_company") and page == "mail":
-    group = next((g for g in groups if g["key"] == ss.view_company), None)
-    if group:
-        show_company_messages(group)
 
 if ss.get("result") is not None:
     result = ss.result
