@@ -1,0 +1,40 @@
+# Shared by both themes. Colours live in [theme.light] / [theme.dark]; the
+# browser picks one from the user's system preference, or from the in-app
+# "Dark theme" toggle (stored like Settings -> Theme).
+[theme]
+primaryColor = "#A57CD1"
+showWidgetBorder = true
+baseRadius = "0.75rem"
+showSidebarBorder = true
+font = "sans serif"
+
+[theme.light]
+backgroundColor = "#FAFBFC"
+# Inputs use this; white keeps them crisp against the off-white page.
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#2C3340"
+linkColor = "#8E63BA"
+borderColor = "#DEE2E6"
+codeBackgroundColor = "#F0F2F5"
+dataframeBorderColor = "#DEE2E6"
+dataframeHeaderBackgroundColor = "#F4F6F8"
+dataframeHeaderTextColor = "#68717D"
+
+[theme.light.sidebar]
+backgroundColor = "#F1F4F7"
+secondaryBackgroundColor = "#E9EDF1"
+
+[theme.dark]
+backgroundColor = "#100D14"
+secondaryBackgroundColor = "#1E1825"
+textColor = "#F1ECF5"
+linkColor = "#C7A7E6"
+borderColor = "#3A2F44"
+codeBackgroundColor = "#1E1825"
+dataframeBorderColor = "#342A3D"
+dataframeHeaderBackgroundColor = "#1E1825"
+dataframeHeaderTextColor = "#B7AFC0"
+
+[theme.dark.sidebar]
+backgroundColor = "#141018"
+secondaryBackgroundColor = "#231C2B"
